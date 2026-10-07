@@ -14,6 +14,7 @@
 #include <cstring>
 #include <cstdio>
 #include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 #include <iostream>
@@ -25,16 +26,36 @@ volatile sig_atomic_t g_terminal_modified = 0;
 struct termios g_original{};
 pid_t g_child = -1;
 
-bool parent_has_norc() {
-    pid_t ppid = getppid();
-    std::string path = "/proc/" + std::to_string(ppid) + "/cmdline";
-    std::ifstream f(path, std::ios::binary);
-    if (!f.is_open())
-        return false;
-    std::string arg;
-    while (std::getline(f, arg, '\0')) {
-        if (arg == "--norc")
-            return true;
+bool ancestor_has_norc() {
+    pid_t cur = getppid();
+    for (int depth = 0; depth < 6 && cur > 1; ++depth) {
+        std::string cmd_path = "/proc/" + std::to_string(cur) + "/cmdline";
+        std::ifstream f(cmd_path, std::ios::binary);
+        if (f.is_open()) {
+            std::string arg;
+            while (std::getline(f, arg, '\0')) {
+                if (arg == "--norc")
+                    return true;
+            }
+        }
+        std::string stat_path = "/proc/" + std::to_string(cur) + "/stat";
+        std::ifstream sf(stat_path);
+        if (!sf.is_open())
+            break;
+        std::string stat_line;
+        if (!std::getline(sf, stat_line))
+            break;
+        auto rparen = stat_line.rfind(')');
+        if (rparen == std::string::npos || rparen + 4 >= stat_line.size())
+            break;
+        std::istringstream ss(stat_line.substr(rparen + 2));
+        char state;
+        pid_t ppid = 0;
+        if (ss >> state >> ppid && ppid > 1) {
+            cur = ppid;
+        } else {
+            break;
+        }
     }
     return false;
 }
@@ -206,7 +227,7 @@ int main(int argc, char* argv[]) {
             }
         } else {
             args.push_back(default_shell);
-            if (parent_has_norc()) {
+            if (ancestor_has_norc()) {
                 args.push_back("--norc");
             }
         }
