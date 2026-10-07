@@ -12,3 +12,12 @@ add_executable(trex-guard
 )
 
 target_link_libraries(trex-guard PRIVATE util)
+
+enable_testing()
+
+add_executable(test_rules
+    tests/test_rules.cpp
+    src/rules.cpp
+)
+
+add_test(NAME test_rules COMMAND test_rules)
