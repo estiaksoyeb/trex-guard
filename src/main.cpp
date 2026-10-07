@@ -83,6 +83,58 @@ void handle_cleanup_signal(int sig) {
     raise(sig);
 }
 
+enum class Decision {
+    Approve,
+    Cancel,
+};
+
+Decision read_approval_decision(int master, struct winsize* window) {
+    char buf[64];
+    while (true) {
+        if (window_changed) {
+            window_changed = 0;
+            if (ioctl(STDIN_FILENO, TIOCGWINSZ, window) == 0)
+                ioctl(master, TIOCSWINSZ, window);
+        }
+
+        ssize_t n = read(STDIN_FILENO, buf, sizeof(buf));
+        if (n < 0) {
+            if (errno == EINTR) {
+                // Interrupted by window resize (SIGWINCH) or signal: continue waiting
+                continue;
+            }
+            return Decision::Cancel;
+        }
+        if (n == 0) {
+            return Decision::Cancel;
+        }
+
+        // Terminal focus reporting: FocusIn (\x1b[I) and FocusOut (\x1b[O).
+        // Ignore focus events so unfocusing/focusing the on-screen keyboard doesn't cancel.
+        if (n >= 3 && buf[0] == '\x1b' && buf[1] == '[' && (buf[2] == 'I' || buf[2] == 'O')) {
+            continue;
+        }
+
+        // Standalone Escape cancels; escape sequences (arrows, touch gestures) are ignored.
+        if (buf[0] == '\x1b') {
+            if (n == 1) {
+                return Decision::Cancel;
+            }
+            continue;
+        }
+
+        for (ssize_t i = 0; i < n; ++i) {
+            char c = buf[i];
+            if (c == '\r' || c == '\n' || c == 'y' || c == 'Y') {
+                return Decision::Approve;
+            }
+            if (c == '\x03' || c == 'n' || c == 'N') {
+                return Decision::Cancel;
+            }
+        }
+    }
+}
+
 // Result of feeding one chunk of stdin to the paste detector.
 struct PasteFeedResult {
     std::string forward;   // bytes to send straight through to the PTY
@@ -385,12 +437,9 @@ int main(int argc, char* argv[]) {
                 if (!write_all(STDOUT_FILENO, header.data(), header.size()))
                     break;
 
-                char c = 0;
-                ssize_t got = read(STDIN_FILENO, &c, 1);
-                const bool approved =
-                    (got == 1 && (c == '\r' || c == '\n' || c == 'y' || c == 'Y'));
+                Decision decision = read_approval_decision(master, &window);
 
-                if (approved) {
+                if (decision == Decision::Approve) {
                     if (!write_all(master, r.hold.data(), r.hold.size()))
                         break;
                     const char* ok = "\r\n\x1b[1;32m[approved]\x1b[0m\r\n";
