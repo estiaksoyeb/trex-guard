@@ -245,6 +245,20 @@ Resolved ble.sh auto-launch issue when running under `exec bash --norc`:
 - **Parent Environment Inheritance**: Implemented `ancestor_has_norc()` in `src/main.cpp` traversing `/proc/<pid>/stat` parent links. Inside the child fork, `getppid()` points to the guard proxy itself; traversing up the ancestor process chain reaches the outer interactive shell. If any ancestor shell was launched with `--norc`, the child shell automatically inherits `--norc`, keeping `ble.sh` disabled.
 - **Verification**: Verified in automated PTY integration tests that launching `tg` from an `exec bash --norc` session runs a clean Bash shell without ble.sh (`CLEAN_BASH_NO_BLE`).
 
+### Mobile UX: Keyboard Unfocus & Terminal Focus Reporting (2026-10-08)
+
+Fixed accidental paste cancellation when unfocusing the keyboard on mobile/Termux:
+
+- **Root Causes**:
+  1. Unfocusing or dismissing the virtual keyboard in Termux/Android changes the terminal window height, triggering `SIGWINCH`. In `src/main.cpp`, `read(STDIN_FILENO, &c, 1)` failed with `-1` and `errno == EINTR`, which the naive approval loop treated as a cancellation (`approved = false`).
+  2. Terminal emulators with focus tracking emit FocusOut sequences (`\x1b[O`) when the soft keyboard is hidden or when switching apps. Naive single-byte reading ingested `\x1b` and treated it as non-Enter / cancel.
+- **Solution (`read_approval_decision`)**:
+  - Automatically handles `EINTR`, updates the child PTY window geometry via `TIOCSWINSZ` without exiting, and loops back to wait for user input.
+  - Ignores focus event sequences (`\x1b[I` FocusIn, `\x1b[O` FocusOut).
+  - Ignores escape prefixes from touch gestures or arrow keys, while preserving standalone `Esc` or `Ctrl-C` (`\x03`) as explicit cancellations.
+  - Only executes upon explicit confirmation (<kbd>Enter</kbd>, `y`, `Y`).
+
+
 
 
 
