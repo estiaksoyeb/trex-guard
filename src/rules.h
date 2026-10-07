@@ -6,17 +6,18 @@ namespace trex {
 
 enum class Risk {
     Safe,
+    Review,
     Danger,
 };
 
 struct Match {
     Risk risk = Risk::Safe;
-    std::string rule;   // name of the matched rule, empty when Safe
+    std::string rule;         // name of the matched rule, empty when Safe
+    std::string snippet;      // exact matched command snippet
+    std::string explanation;  // explanation of the risk
 };
 
-// Literal-string scanner. Intentionally simple: it does NOT parse shell,
-// so obfuscated or quoted forms can evade it. Replace with a real parser
-// before relying on it for safety decisions.
+// Safety scanner that checks for known risky command patterns.
 Match classify(const std::string& paste);
 
 }  // namespace trex
