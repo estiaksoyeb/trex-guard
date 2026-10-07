@@ -24,7 +24,7 @@ shell. Bracketed pastes are analyzed for safety:
 - **`[SAFE]` pastes**: Pass through immediately and execute transparently without prompting.
 - **`[REVIEW REQUIRED]` & `[HIGH RISK]` pastes**: Intercepted and held for operator review.
   A structured banner highlights the suspicious command snippet and risk rationale,
-  and prompts the user for approval (<kbd>Enter</kbd>/`y`) or cancellation (<kbd>Ctrl-C</kbd>/`n`).
+  and prompts the operator concisely (`Execute? [Enter/^C]`).
 
 The scanner detects dangerous command patterns (destructive git commands,
 recursive deletions, pipe-to-shell downloads, block device writes, mkfs, fork bombs)

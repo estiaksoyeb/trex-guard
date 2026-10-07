@@ -227,6 +227,15 @@ Refined firewall gating behavior to eliminate friction for safe commands:
 - **Configurability**: Users desiring strict manual verification of all pastes can set `auto_approve_safe = false` in `~/.config/trex-guard/config.ini`.
 - **Verification**: Updated test suite asserting default `auto_approve_safe = true` and configurable override. 61/61 tests pass.
 
+### UI Polish: Streamlined Prompt & Header UX (2026-10-08)
+
+Redesigned the human approval prompt and risk banners for compact readability:
+
+- **Prompt**: Replaced the verbose `--- press Enter (or y) to approve, Ctrl-C (or Esc/n) to cancel: ` with a clean, standard CLI prompt: `Execute? [Enter/^C] `.
+- **Header**: Compacted banner labels and byte/line indicators (e.g. `[HIGH RISK: rm -rf] (35B, 2L)`).
+- **Feedback**: Simplified cancellation feedback to `[cancelled]`.
+
+
 
 
 
