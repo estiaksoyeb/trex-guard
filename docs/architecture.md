@@ -38,7 +38,7 @@ The prototype uses:
 
 ## Current prototype
 
-`src/main.cpp`
+`src/main.cpp`, `src/rules.cpp` (`trex::classify`)
 
 The prototype currently:
 
@@ -50,12 +50,13 @@ The prototype currently:
 6. Forwards child output to the terminal.
 7. Waits for the child shell to exit.
 
-The prototype currently includes a temporary observe-only paste detector
-in src/main.cpp (struct PasteTap). It is fed every byte read from the
-terminal and tracks bracketed-paste boundaries across read chunks,
-logging CHUNK, PASTE_START, PASTE_END, and OUT events to
-/tmp/trex-paste.log. It does not gate forwarding: bytes still reach the
-PTY master unchanged.
+The prototype now intercepts pastes. `struct PasteTap` in src/main.cpp
+classifies each stdin chunk, emitting typed bytes as "forward" and paste
+bytes as "hold". When a paste completes, the guard prints the held text
+and asks for approval; only on `y` are the bytes written to the PTY
+master. A literal-string scanner (`src/rules.cpp`, `trex::classify`)
+tags known-dangerous patterns for display. It does not parse shell, so
+obfuscated forms evade it.
 
 Confirmed behavior (SEEN):
 
@@ -72,13 +73,11 @@ Known constraint (SEEN in an earlier tap, not yet re-tested here):
 
 The prototype does not currently:
 
-- scan commands
-- classify risk
-- gate forwarding on approval
+- parse shell syntax (scanner is literal-string only)
+- enforce different behavior for DANGER vs REVIEW (both just prompt)
 - modify shell configuration
 - install itself
 - persist configuration
-- intercept dangerous commands
 
 ## Target architecture
 

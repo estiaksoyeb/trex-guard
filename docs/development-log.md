@@ -113,3 +113,33 @@ Next implementation step: gate forwarding. On PASTE_START, stop writing
 paste bytes to the master and accumulate them; on PASTE_END, present
 the buffer for approval and forward or drop. Remove the temporary
 logging once the gate is in place.
+
+
+### Phase 2 + Phase 3 v0 (2026-10-08)
+
+Implemented paste gating and a literal-string safety scanner.
+
+- PasteTap.feed now returns PasteFeedResult{forward, hold, paste_complete}
+  instead of logging. Typed bytes go to forward; paste bytes accumulate
+  in hold.
+- main() writes forward to the PTY, and on paste_complete prints the held
+  text with a line count and an approval prompt. Single-key response:
+  y approves, any other key cancels. Approved bytes are written to the
+  master; cancelled bytes are dropped.
+- Removed log_line, escape_bytes, and all /tmp/trex-paste.log writes.
+- Added src/rules.cpp / src/rules.h with trex::classify(): ten literal
+  rules, returns Risk::Danger plus a rule name. main() prints
+  [DANGER: <rule>] in the header.
+
+Verified:
+
+- Three-line paste held, approved (commands ran), cancelled (nothing ran).
+- Benign paste (echo hi) shows no DANGER marker.
+- Dangerous paste (rm -rf /tmp/scratch) shows [DANGER: rm -rf].
+
+Known issues / deferrals:
+
+- Scanner is literal-string; no shell parsing. curl/wget rules are broad.
+- Approved paste is echoed twice on screen (guard + Bash line discipline).
+- After cancel, ble.sh in the outer terminal needs an extra Enter to
+  repaint; this is outside the guard.

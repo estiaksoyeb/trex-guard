@@ -8,14 +8,17 @@ The goal is to intercept pasted command blocks before they reach the shell, anal
 
 Phase 1 — PTY foundation: **behavior-validated for transparent forwarding**
 
-Phase 2 — Paste interception: **in progress (observe-only)**
+Phase 2 — Paste interception: **done** (hold → approve/cancel → forward)
+
+Phase 3 — Safety scanner: **in progress** (literal-string v0)
 
 The current prototype creates a child shell inside a pseudo-terminal and
 transparently forwards input/output between the user's terminal and that
-shell. A temporary observe-only paste detector logs bracketed-paste
-boundaries; it does not yet gate forwarding.
+shell. Bracketed pastes are held for review: a header shows the text,
+flags known-dangerous patterns (`[DANGER: ...]`), and asks for `y` to
+run or any other key to cancel.
 
-No safety scanning or approval gate exists yet.
+The scanner is literal-string only; obfuscated shell forms evade it.
 
 ## Development principles
 

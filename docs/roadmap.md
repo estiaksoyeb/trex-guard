@@ -14,20 +14,27 @@
 
 - [x] Determine reliable paste-boundary behavior through the PTY
 - [x] Capture a complete paste without executing it
-- [ ] Gate forwarding: buffer the paste and release only on approval
-- [ ] Preserve ordinary typing
-- [ ] Preserve Ble.sh compatibility
-- [ ] Release captured input after approval
+- [x] Gate forwarding: buffer the paste and release only on approval
+- [x] Release captured input after approval (single-key `y`/other)
+- [ ] Preserve ordinary typing (verify non-paste input unaffected)
+- [ ] Preserve Ble.sh compatibility (known repaint friction after cancel)
 
 ## Phase 3 — Safety scanner
 
-Initial high-risk categories:
+v0 (literal-string scanner, `src/rules.cpp`) is in place: ten rules
+(`rm -rf`, `mkfs`, `dd if=`, write to block device, `chmod -R 777 /`,
+`curl`, `wget`, `git push --force`, `git reset --hard`, fork bomb).
+It flags matches with `[DANGER: <rule>]` in the approval header.
+It does not parse shell, so obfuscated/quoted forms evade it.
 
-- [ ] `rm` recursive/force deletion
-- [ ] `git reset --hard`
+- [x] `rm` recursive/force deletion
+- [x] `git reset --hard`
+- [x] filesystem formatting tools (`mkfs`)
+- [x] fork bomb
+- [ ] Narrow `curl`/`wget` rules to actual pipe-to-shell forms
+- [ ] Replace literal scanner with a real shell parser
 - [ ] destructive `git clean`
 - [ ] destructive checkout/restore
-- [ ] filesystem formatting tools
 - [ ] `dd`
 - [ ] recursive permission changes
 - [ ] `find ... -delete`
