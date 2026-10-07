@@ -16,6 +16,8 @@ Phase 4 — Human approval UI: **done** (tiered risk, snippet display, explanati
 
 Phase 5 — Configuration: **done** (custom rules, allowlists, disabled rules, auto_approve_safe)
 
+Phase 6 — Installation/integration: **done** (CMake install, tg launcher, shell integration)
+
 The current prototype creates a child shell inside a pseudo-terminal and
 transparently forwards input/output between the user's terminal and that
 shell. Bracketed pastes are held for review: a structured banner presents the

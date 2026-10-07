@@ -67,8 +67,8 @@ Example provided in `examples/config.ini`.
 
 ## Phase 6 — Installation/integration
 
-- [ ] install command
-- [ ] optional shell integration
-- [ ] optional guarded-shell launcher
-- [ ] documentation
-- [ ] uninstall procedure
+- [x] install command (`cmake --install` supports system or `--prefix ~/.local`)
+- [x] optional shell integration (`scripts/shell-integration.bash` with aliases and prompt indicator)
+- [x] optional guarded-shell launcher (`scripts/tg` wrapper with recursion prevention)
+- [x] documentation (`docs/install.md` and updated `README.md`)
+- [x] uninstall procedure (`cmake --build build --target uninstall`)

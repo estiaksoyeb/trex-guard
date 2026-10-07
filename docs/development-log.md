@@ -181,5 +181,17 @@ Implemented the configuration subsystem (`src/config.h`, `src/config.cpp`):
 - **Reference Example**: Added `examples/config.ini` for user documentation.
 - **Verification**: Added configuration unit tests in `tests/test_rules.cpp` validating parsing, allowlists, disabled rules, and custom rules across tiers. Tests pass 49/49.
 
+### Phase 6 Installation & Integration (2026-10-08)
+
+Implemented installation targets, launcher wrapper, and shell integration:
+
+- **CLI flags**: Updated `src/main.cpp` to support `--help` (`-h`) and `--version` (`-v`), avoiding shell launches when querying information.
+- **Environment marker**: Child processes now export `TREX_GUARD_ACTIVE=1` so child shells and tools can detect the active guard session.
+- **Guarded-shell launcher**: Added `scripts/tg`, a shell wrapper that detects existing guard sessions, supports `--help` and `--version`, and executes `trex-guard`.
+- **Shell integration**: Added `scripts/shell-integration.bash` providing `alias tg='trex-guard'` and `trex_guard_indicator()` for shell prompts.
+- **CMake install & uninstall**: Added `install()` targets for binary, launcher script, config template, and shell integration script using `GNUInstallDirs`. Added custom `uninstall` target via `cmake/cmake_uninstall.cmake.in`.
+- **Documentation**: Created `docs/install.md` detailing build, install, shell integration, configuration, and uninstallation steps.
+
+
 
 
