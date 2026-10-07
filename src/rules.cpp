@@ -122,6 +122,36 @@ const std::vector<RegexRule>& get_regex_rules() {
          Risk::Review,
          "Discards modified working tree state across working tree files",
          R"(\bgit\s+checkout\b.*(--\s+\.|-f\b)|\bgit\s+restore\b.*(?:\s\.(?:\s|$)|--worktree))"},
+
+        // Danger: Dynamic shell eval
+        {"shell eval",
+         Risk::Danger,
+         "Dynamic shell evaluation can execute arbitrary uninspected code",
+         R"(\beval\s+[\$\"'])"},
+
+        // Danger: Encoded payload execution via shell pipe
+        {"encoded shell pipe",
+         Risk::Danger,
+         "Decodes and directly executes obfuscated shell commands",
+         R"(\bbase64\s+(-d|--decode)\b.*\|\s*(sudo\s+)?(ba|z|a)?sh\b)"},
+
+        // Danger: Heredoc piped or fed directly into shell interpreter
+        {"heredoc to shell",
+         Risk::Danger,
+         "Directly executes inline heredoc script into a shell interpreter",
+         R"(\b(bash|sh|zsh)\s*<<\s*['"]?[A-Za-z0-9_]+['"]?|<<\s*['"]?[A-Za-z0-9_]+['"]?\s*\|\s*(sudo\s+)?(ba|z|a)?sh\b)"},
+
+        // Danger: Scripting interpreter executing system process one-liners
+        {"inline script execution",
+         Risk::Danger,
+         "Executes system process or dynamic code through scripting interpreter one-liner",
+         R"(\bpython[0-9.]*\s+-c\s+.*(os\.system|subprocess\.|exec\(|eval\()|\bperl\s+-e\s+.*(system|exec)|\bruby\s+-e\s+.*(system|exec))"},
+
+        // Review: Subshell execution
+        {"subshell execution",
+         Risk::Review,
+         "Executes inline command string within an explicit subshell or elevated context",
+         R"(\b(sudo\s+)?(bash|sh|zsh)\s+-c\s+)"},
     };
     return rules;
 }

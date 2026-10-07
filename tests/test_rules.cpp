@@ -27,6 +27,8 @@ int main() {
         {"rm file.txt", trex::Risk::Safe, ""},
         {"find . -name '*.txt'", trex::Risk::Safe, ""},
         {"chmod 644 file.txt", trex::Risk::Safe, ""},
+        {"python3 -c \"print('hello world')\"", trex::Risk::Safe, ""},
+        {"cat << 'EOF' > README.md\n# Header\nEOF", trex::Risk::Safe, ""},
 
         // High Risk / Danger commands
         {"rm -rf /tmp/test", trex::Risk::Danger, "rm -rf"},
@@ -48,6 +50,12 @@ int main() {
         {"find /tmp -delete", trex::Risk::Danger, "find delete"},
         {"find . -name '*.log' -exec rm {} +", trex::Risk::Danger, "find delete"},
         {":(){:|:&};:", trex::Risk::Danger, "fork bomb"},
+        {"eval $(ssh-agent)", trex::Risk::Danger, "shell eval"},
+        {"eval \"$DYNAMIC_CMD\"", trex::Risk::Danger, "shell eval"},
+        {"echo 'payload' | base64 -d | sh", trex::Risk::Danger, "encoded shell pipe"},
+        {"bash << 'EOF'\necho hi\nEOF", trex::Risk::Danger, "heredoc to shell"},
+        {"python3 -c \"import os; os.system('ls')\"", trex::Risk::Danger, "inline script execution"},
+        {"perl -e 'system(\"ls\")'", trex::Risk::Danger, "inline script execution"},
 
         // Review commands (destructive git/repository state changes)
         {"git push --force origin main", trex::Risk::Review, "git force push"},
@@ -62,6 +70,8 @@ int main() {
         {"git checkout -f", trex::Risk::Review, "git checkout/restore"},
         {"git restore .", trex::Risk::Review, "git checkout/restore"},
         {"git restore --worktree .", trex::Risk::Review, "git checkout/restore"},
+        {"bash -c \"make build\"", trex::Risk::Review, "subshell execution"},
+        {"sudo sh -c \"echo 1\"", trex::Risk::Review, "subshell execution"},
 
         // Mixed: Danger takes precedence over Review
         {"git clean -fd\nrm -rf /var/log", trex::Risk::Danger, "rm -rf"},
