@@ -242,7 +242,9 @@ Resolved ble.sh auto-launch issue when running under `exec bash --norc`:
 - **Root Cause**: Previously, `trex-guard` hardcoded `execl(shell, shell, "--login", nullptr)`. A login shell always forces execution of `/etc/profile` and `~/.bashrc`, which in turn initialized `ble.sh` even if the user ran `exec bash --norc` in their outer terminal.
 - **Removed Forced `--login`**: Default child shell is now launched as an interactive shell without forced login file reloading.
 - **Argument Forwarding**: `tg` and `trex-guard` now accept arbitrary shell arguments (e.g. `tg --norc`, `tg bash --norc`, `tg zsh`).
-- **Parent Environment Inheritance**: `parent_has_norc()` checks `/proc/$PPID/cmdline`. If the parent terminal was started with `--norc`, the child shell automatically inherits `--norc`, keeping `ble.sh` disabled.
+- **Parent Environment Inheritance**: Implemented `ancestor_has_norc()` in `src/main.cpp` traversing `/proc/<pid>/stat` parent links. Inside the child fork, `getppid()` points to the guard proxy itself; traversing up the ancestor process chain reaches the outer interactive shell. If any ancestor shell was launched with `--norc`, the child shell automatically inherits `--norc`, keeping `ble.sh` disabled.
+- **Verification**: Verified in automated PTY integration tests that launching `tg` from an `exec bash --norc` session runs a clean Bash shell without ble.sh (`CLEAN_BASH_NO_BLE`).
+
 
 
 
