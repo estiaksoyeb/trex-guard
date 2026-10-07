@@ -1,4 +1,6 @@
 #include <pty.h>
+
+#include "rules.h"
 #include <signal.h>
 #include <sys/ioctl.h>
 #include <sys/select.h>
@@ -21,42 +23,22 @@ void handle_sigwinch(int) {
     window_changed = 1;
 }
 
-// TEMP DEBUG: observe-only paste detector, logs events, forwards nothing itself
-void log_line(const std::string& line) {
-    FILE* f = std::fopen("/tmp/trex-paste.log", "a");
-    if (f == nullptr)
-        return;
-    std::fputs(line.c_str(), f);
-    std::fputc('\n', f);
-    std::fclose(f);
-}
-
-std::string escape_bytes(const std::string& in) {
-    std::string out;
-    char tmp[8];
-    for (unsigned char c : in) {
-        if (c == '\n')
-            out += "\\n";
-        else if (c == '\r')
-            out += "\\r";
-        else if (c >= 0x20 && c < 0x7f)
-            out += static_cast<char>(c);
-        else {
-            std::snprintf(tmp, sizeof tmp, "\\x%02x", c);
-            out += tmp;
-        }
-    }
-    return out;
-}
+// Result of feeding one chunk of stdin to the paste detector.
+struct PasteFeedResult {
+    std::string forward;   // bytes to send straight through to the PTY
+    std::string hold;      // bytes captured as part of a paste
+    bool paste_complete = false;  // a full paste is now in `hold`
+};
 
 struct PasteTap {
     bool in_paste = false;
     size_t match = 0;
     std::string captured;
 
-    void feed(const char* data, size_t size) {
-        log_line("CHUNK " + std::to_string(size));
-        size_t outside = 0;
+    // Classifies one chunk of stdin. Returns the bytes to forward immediately
+    // (typed input) and, when a paste ends, the captured paste text.
+    PasteFeedResult feed(const char* data, size_t size) {
+        PasteFeedResult r;
         for (size_t i = 0; i < size; ++i) {
             const char c = data[i];
             const char* marker = in_paste ? "\x1b[201~" : "\x1b[200~";
@@ -66,17 +48,12 @@ struct PasteTap {
                 match = 0;
                 if (in_paste) {
                     in_paste = false;
-                    size_t lines = 0;
-                    for (char ch : captured)
-                        if (ch == '\n' || ch == '\r')
-                            ++lines;
-                    log_line("PASTE_END bytes=" + std::to_string(captured.size()) +
-                             " newlines=" + std::to_string(lines) +
-                             " text=" + escape_bytes(captured.substr(0, 400)));
+                    r.hold = captured;
+                    r.paste_complete = true;
+                    captured.clear();
                 } else {
                     in_paste = true;
                     captured.clear();
-                    log_line("PASTE_START");
                 }
                 continue;
             }
@@ -84,22 +61,19 @@ struct PasteTap {
                 if (in_paste)
                     captured.append(marker, match);
                 else
-                    outside += match;
+                    r.forward.append(marker, match);
                 match = 0;
                 if (c == marker[0]) {
                     match = 1;
                     continue;
                 }
             }
-            if (in_paste) {
-                if (captured.size() < (1u << 20))
-                    captured.push_back(c);
-            } else {
-                ++outside;
-            }
+            if (in_paste)
+                captured.push_back(c);
+            else
+                r.forward.push_back(c);
         }
-        if (outside > 0)
-            log_line("OUT " + std::to_string(outside));
+        return r;
     }
 };
 
@@ -222,8 +196,6 @@ int main() {
 
         if (FD_ISSET(STDIN_FILENO, &fds)) {
             ssize_t n = read(STDIN_FILENO, buffer, sizeof(buffer));
-            if (n > 0)
-                paste_tap.feed(buffer, static_cast<size_t>(n));
 
             if (n == 0)
                 break;
@@ -235,8 +207,60 @@ int main() {
                 break;
             }
 
-            if (!write_all(master, buffer, static_cast<size_t>(n)))
+            PasteFeedResult r = paste_tap.feed(buffer, static_cast<size_t>(n));
+
+            if (!r.forward.empty() &&
+                !write_all(master, r.forward.data(), r.forward.size()))
                 break;
+
+            if (r.paste_complete) {
+                std::string shown;
+                size_t lines = 0;
+                for (char ch : r.hold) {
+                    if (ch == '\r') {
+                        shown += "\r\n";
+                        ++lines;
+                    } else if (ch == '\n') {
+                        shown += "\r\n";
+                        ++lines;
+                    } else {
+                        shown += ch;
+                    }
+                }
+                if (!shown.empty() &&
+                    shown[shown.size() - 1] != '\n' &&
+                    shown[shown.size() - 1] != '\r')
+                    ++lines;
+
+                trex::Match m = trex::classify(r.hold);
+                std::string danger;
+                if (m.risk == trex::Risk::Danger)
+                    danger = "  [DANGER: " + m.rule + "]";
+
+                std::string header =
+                    "\r\n--- pasted " + std::to_string(r.hold.size()) +
+                    " bytes, " + std::to_string(lines) +
+                    " lines ---" + danger + "\r\n" + shown +
+                    "\r\n--- press y to approve, any other key to cancel: ";
+
+                if (!write_all(STDOUT_FILENO, header.data(), header.size()))
+                    break;
+
+                char c = 0;
+                ssize_t got = read(STDIN_FILENO, &c, 1);
+                const bool approved =
+                    (got == 1 && (c == 'y' || c == 'Y'));
+
+                if (approved) {
+                    if (!write_all(master, r.hold.data(), r.hold.size()))
+                        break;
+                    const char* ok = "\r\n[approved]\r\n";
+                    write_all(STDOUT_FILENO, ok, std::strlen(ok));
+                } else {
+                    const char* no = "\r\n[paste cancelled]\r\n";
+                    write_all(STDOUT_FILENO, no, std::strlen(no));
+                }
+            }
         }
 
         if (FD_ISSET(master, &fds)) {

@@ -8,6 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_executable(trex-guard
     src/main.cpp
+    src/rules.cpp
 )
 
 target_link_libraries(trex-guard PRIVATE util)
