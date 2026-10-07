@@ -17,7 +17,7 @@
 - [x] Gate forwarding: buffer the paste and release only on approval
 - [x] Release captured input after approval (single-key `y`/other)
 - [x] Preserve ordinary typing (verify non-paste input unaffected)
-- [ ] Preserve Ble.sh compatibility (known repaint friction after cancel)
+- [x] Preserve Ble.sh compatibility (fixed repaint friction after cancel via child interrupt)
 
 ## Phase 3 — Safety scanner
 
