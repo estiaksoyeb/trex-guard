@@ -168,4 +168,18 @@ Implemented the full interactive human approval UI:
 - **Approval Keybindings**: Operator can approve with <kbd>Enter</kbd> (`\r`/`\n`) or `y`/`Y`, or cancel with <kbd>Ctrl-C</kbd> (`\x03`), <kbd>Esc</kbd> (`\x1b`), or `n`/`N`. Cancelled pastes are dropped immediately without execution.
 - **Tests**: Expanded unit tests to 44 assertions testing tier classification, snippet presence, explanation presence, and danger-over-review precedence.
 
+### Phase 5 Configuration Subsystem (2026-10-08)
+
+Implemented the configuration subsystem (`src/config.h`, `src/config.cpp`):
+
+- **Location**: Default path loaded from `$XDG_CONFIG_HOME/trex-guard/config.ini` or `~/.config/trex-guard/config.ini`. If absent, defaults are safely used without errors.
+- **Sections**:
+  - `[general]`: `auto_approve_safe = true/false` allows automated forwarding of safe pastes without prompting if desired by the operator.
+  - `[allowlist]`: Substrings / commands to explicitly treat as Safe, bypassing rule matches (e.g. internal scripts or known force pushes).
+  - `[disabled_rules]`: Disables specified built-in rules by name.
+  - `[custom_rules]`: Allows user-defined rules in `name | risk | pattern | explanation` format.
+- **Reference Example**: Added `examples/config.ini` for user documentation.
+- **Verification**: Added configuration unit tests in `tests/test_rules.cpp` validating parsing, allowlists, disabled rules, and custom rules across tiers. Tests pass 49/49.
+
+
 

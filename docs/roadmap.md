@@ -56,21 +56,14 @@ The scanner should eventually normalize commands instead of relying only on raw 
 
 ## Phase 5 — Configuration
 
-Potential configuration location:
+Configuration file location: `~/.config/trex-guard/config.ini` (or `$XDG_CONFIG_HOME/trex-guard/config.ini`)
+Example provided in `examples/config.ini`.
 
-`~/.config/trex-guard/`
-
-Potential configuration:
-
-- enabled/disabled checks
-- severity thresholds
-- custom rules
-- allowlists
-- project-specific rules
-- UI preferences
-- logging preferences
-
-Exact configuration format will be decided after the core architecture is validated.
+- [x] enabled/disabled checks (`[disabled_rules]`)
+- [x] severity thresholds / tiers (`[custom_rules]` support `review` and `danger`)
+- [x] custom rules (`[custom_rules]` with pattern and explanation)
+- [x] allowlists (`[allowlist]` to bypass checks for known safe patterns)
+- [x] UI preferences (`auto_approve_safe = true/false`)
 
 ## Phase 6 — Installation/integration
 

@@ -14,6 +14,8 @@ Phase 3 — Safety scanner: **in progress** (pattern scanner with test suite)
 
 Phase 4 — Human approval UI: **done** (tiered risk, snippet display, explanations, Enter/Ctrl-C keys)
 
+Phase 5 — Configuration: **done** (custom rules, allowlists, disabled rules, auto_approve_safe)
+
 The current prototype creates a child shell inside a pseudo-terminal and
 transparently forwards input/output between the user's terminal and that
 shell. Bracketed pastes are held for review: a structured banner presents the
