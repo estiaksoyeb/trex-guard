@@ -167,6 +167,24 @@ npm publish | review | \bnpm\s+publish\b | Publishes package to public registry
         passed++;
     }
 
+    // Test default Config has auto_approve_safe = true
+    trex::Config default_cfg;
+    if (!default_cfg.auto_approve_safe) {
+        std::cerr << "FAIL: default_cfg.auto_approve_safe should be true by default\n";
+        failed++;
+    } else {
+        passed++;
+    }
+
+    // Test setting auto_approve_safe = false
+    trex::Config strict_cfg = trex::parse_config_string("[general]\nauto_approve_safe = false\n");
+    if (strict_cfg.auto_approve_safe) {
+        std::cerr << "FAIL: strict_cfg.auto_approve_safe should be false when configured\n";
+        failed++;
+    } else {
+        passed++;
+    }
+
     std::cout << "Tests run: " << (passed + failed)
               << ", Passed: " << passed
               << ", Failed: " << failed << "\n";

@@ -16,7 +16,7 @@ struct CustomRule {
 };
 
 struct Config {
-    bool auto_approve_safe = false;
+    bool auto_approve_safe = true;
     std::vector<std::string> allowlist;             // strings or regexes to treat as safe
     std::unordered_set<std::string> disabled_rules; // rule names to ignore
     std::vector<CustomRule> custom_rules;           // user-defined rules
