@@ -6,9 +6,9 @@
 - [x] C++17 executable
 - [x] `forkpty()` shell creation
 - [x] PTY input/output forwarding
-- [ ] Interactive behavior validation
-- [ ] Resize propagation
-- [ ] Signal/job-control validation
+- [x] Interactive behavior validation
+- [x] Resize propagation
+- [x] Signal/job-control validation (SIGTERM/SIGHUP/SIGINT/SIGQUIT and atexit cleanup)
 
 ## Phase 2 — Paste interception
 
@@ -16,7 +16,7 @@
 - [x] Capture a complete paste without executing it
 - [x] Gate forwarding: buffer the paste and release only on approval
 - [x] Release captured input after approval (single-key `y`/other)
-- [ ] Preserve ordinary typing (verify non-paste input unaffected)
+- [x] Preserve ordinary typing (verify non-paste input unaffected)
 - [ ] Preserve Ble.sh compatibility (known repaint friction after cancel)
 
 ## Phase 3 — Safety scanner

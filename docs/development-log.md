@@ -192,6 +192,15 @@ Implemented installation targets, launcher wrapper, and shell integration:
 - **CMake install & uninstall**: Added `install()` targets for binary, launcher script, config template, and shell integration script using `GNUInstallDirs`. Added custom `uninstall` target via `cmake/cmake_uninstall.cmake.in`.
 - **Documentation**: Created `docs/install.md` detailing build, install, shell integration, configuration, and uninstallation steps.
 
+### Phase 1 Hardening: Signal Handling & Terminal Restoration (2026-10-08)
+
+Hardened terminal restoration and signal safety in `src/main.cpp`:
+
+- **Atexit Cleanup**: Registered `std::atexit(restore_terminal)` to guarantee that whenever the program exits normally, the original `termios` configuration is restored to the outer terminal.
+- **Signal Handlers**: Installed signal handlers for `SIGTERM`, `SIGHUP`, `SIGINT`, and `SIGQUIT` that invoke `restore_terminal()`, forward the signal to the child PTY, reset the signal handler to `SIG_DFL`, and re-raise. This prevents the parent terminal from remaining stuck in raw mode (`echo` disabled, staircase newlines) if the guard process is unexpectedly killed or terminated.
+- **State Guard**: Added atomic flag `g_terminal_modified` ensuring `tcsetattr` is only called if raw mode was actually engaged.
+
+
 
 
 

@@ -6,7 +6,7 @@ The goal is to intercept pasted command blocks before they reach the shell, anal
 
 ## Current status
 
-Phase 1 — PTY foundation: **behavior-validated for transparent forwarding**
+Phase 1 — PTY foundation: **done** (transparent forwarding, resize propagation, signal-safe terminal cleanup)
 
 Phase 2 — Paste interception: **done** (hold → approve/cancel → forward)
 
