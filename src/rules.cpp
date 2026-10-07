@@ -121,7 +121,13 @@ const std::vector<RegexRule>& get_regex_rules() {
         {"git checkout/restore",
          Risk::Review,
          "Discards modified working tree state across working tree files",
-         R"(\bgit\s+checkout\b.*(--\s+\.|-f\b)|\bgit\s+restore\b.*(?:\s\.(?:\s|$)|--worktree))"},
+         R"(\bgit\s+checkout\b.*(?:--\s+\.|\s\.(?:\s|$)|-f\b)|\bgit\s+restore\b.*(?:\s\.(?:\s|$)|--worktree))"},
+
+        // Review: File deletion (single file or non-recursive rm, rmdir, unlink, shred)
+        {"file deletion",
+         Risk::Review,
+         "Permanently deletes files or directories from the filesystem",
+         R"((?:^|[^a-zA-Z0-9_.-])(rm|rmdir|unlink|shred)\s+([^\r\n]*\S))"},
 
         // Danger: Dynamic shell eval
         {"shell eval",
@@ -199,7 +205,12 @@ Match classify(const std::string& paste, const Config* config) {
             Match m;
             m.risk = r.risk;
             m.rule = r.name;
-            m.snippet = sm.str();
+            std::string snip = sm.str();
+            size_t start = snip.find_first_not_of("\r\n\t ;&|`$");
+            if (start != std::string::npos && start > 0) {
+                snip = snip.substr(start);
+            }
+            m.snippet = snip;
             m.explanation = r.explanation;
             if (m.risk == Risk::Danger)
                 return m;
