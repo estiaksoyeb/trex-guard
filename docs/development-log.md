@@ -258,6 +258,19 @@ Fixed accidental paste cancellation when unfocusing the keyboard on mobile/Termu
   - Ignores escape prefixes from touch gestures or arrow keys, while preserving standalone `Esc` or `Ctrl-C` (`\x03`) as explicit cancellations.
   - Only executes upon explicit confirmation (<kbd>Enter</kbd>, `y`, `Y`).
 
+### Safety Scanner: File Deletion Detection & Git Checkout Coverage (2026-10-08)
+
+Resolved silent auto-approval flaw for unprompted file deletions (`rm`, `rmdir`, `unlink`, `shred`):
+
+- **Root Cause**: Previously, the scanner only classified *recursive force* deletions (`rm -rf`) as dangerous, while ordinary file removals (`rm README.md`, `rm file.txt`) were explicitly marked `Safe`. Under `auto_approve_safe = true`, a multi-line paste containing benign build commands mixed with `rm <file>` executed without confirmation, permanently deleting files.
+- **Rule Fix**:
+  - Added `file deletion` rule under `Risk::Review` matching `rm`, `rmdir`, `unlink`, and `shred` commands with arguments.
+  - Excluded flags like `docker run --rm` or words containing `rm` (`confirm`, `perform`, `format`).
+  - Added support for `git checkout .` (without `--`) to catch working-tree discards.
+  - Trimmed leading punctuation/whitespace from matched regex snippets.
+- **Verification**: Added 7 test cases covering `rm`, `unlink`, `shred`, `git checkout .`, and safe `--rm` flags. 68/68 automated tests pass.
+
+
 
 
 
