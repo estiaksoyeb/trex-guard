@@ -20,10 +20,11 @@ Phase 6 — Installation/integration: **done** (CMake install, tg launcher, shel
 
 The current prototype creates a child shell inside a pseudo-terminal and
 transparently forwards input/output between the user's terminal and that
-shell. Bracketed pastes are held for review: a structured banner presents the
-risk tier (`SAFE`, `REVIEW REQUIRED`, or `HIGH RISK`), highlights suspicious command
-snippets and risk rationale, displays the payload, and prompts the user for
-approval (<kbd>Enter</kbd>/`y`) or cancellation (<kbd>Ctrl-C</kbd>/`n`).
+shell. Bracketed pastes are analyzed for safety:
+- **`[SAFE]` pastes**: Pass through immediately and execute transparently without prompting.
+- **`[REVIEW REQUIRED]` & `[HIGH RISK]` pastes**: Intercepted and held for operator review.
+  A structured banner highlights the suspicious command snippet and risk rationale,
+  and prompts the user for approval (<kbd>Enter</kbd>/`y`) or cancellation (<kbd>Ctrl-C</kbd>/`n`).
 
 The scanner detects dangerous command patterns (destructive git commands,
 recursive deletions, pipe-to-shell downloads, block device writes, mkfs, fork bombs)

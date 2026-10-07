@@ -218,6 +218,16 @@ Resolved prompt repaint friction on paste cancellation:
 - **Root Cause**: When a paste was cancelled, the guard consumed the cancellation key and discarded the paste without sending anything to the child master PTY. As a result, line editors (such as `ble.sh` or Readline) remained waiting at their previous input offset and required an extra <kbd>Enter</kbd> from the user to trigger a prompt redraw.
 - **Resolution**: Upon paste cancellation in `src/main.cpp`, the guard sends an interrupt character (`\x03` / Ctrl-C) to the child master PTY. This instructs the child's line discipline and line editor to reset the input line buffer and cleanly reprint a fresh prompt on the terminal immediately.
 
+### Auto-Approval of Safe Pastes by Default (2026-10-08)
+
+Refined firewall gating behavior to eliminate friction for safe commands:
+
+- **Rationale**: Requiring human confirmation on harmless commands (e.g. `ls`, `git status`, `python script.py`) creates cognitive fatigue. A transparent firewall should pass safe commands through immediately, reserving confirmation only for commands classified as `Review` or `High Risk / Danger`.
+- **Change**: Updated default `auto_approve_safe = true` in `Config`. When a paste contains no risky patterns, it passes straight through to the shell.
+- **Configurability**: Users desiring strict manual verification of all pastes can set `auto_approve_safe = false` in `~/.config/trex-guard/config.ini`.
+- **Verification**: Updated test suite asserting default `auto_approve_safe = true` and configurable override. 61/61 tests pass.
+
+
 
 
 
