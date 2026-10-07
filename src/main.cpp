@@ -336,6 +336,10 @@ int main(int argc, char* argv[]) {
                 } else {
                     const char* no = "\r\n\x1b[1;31m[paste cancelled]\x1b[0m\r\n";
                     write_all(STDOUT_FILENO, no, std::strlen(no));
+                    // Send interrupt (Ctrl-C) to child master PTY so line editors
+                    // (ble.sh, readline) reset input buffer and immediately repaint prompt
+                    const char interrupt = '\x03';
+                    write_all(master, &interrupt, 1);
                 }
             }
         }
