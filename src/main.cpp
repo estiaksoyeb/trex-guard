@@ -297,28 +297,29 @@ int main(int argc, char* argv[]) {
 
                 std::string banner;
                 if (m.risk == trex::Risk::Danger) {
-                    banner = "\r\n\x1b[1;31m--- [HIGH RISK: " + m.rule + "] " +
-                             std::to_string(r.hold.size()) + " bytes, " +
-                             std::to_string(lines) + " lines ---\x1b[0m\r\n" +
-                             "\x1b[1;31mSuspicious command:\x1b[0m " + m.snippet + "\r\n" +
-                             "\x1b[1;31mRisk explanation:\x1b[0m   " + m.explanation + "\r\n";
+                    banner = "\r\n\x1b[1;31m[HIGH RISK: " + m.rule + "]\x1b[0m (" +
+                             std::to_string(r.hold.size()) + "B, " +
+                             std::to_string(lines) + "L)\r\n" +
+                             "  \x1b[31mCommand:\x1b[0m " + m.snippet + "\r\n" +
+                             "  \x1b[31mRisk:\x1b[0m    " + m.explanation + "\r\n";
                 } else if (m.risk == trex::Risk::Review) {
-                    banner = "\r\n\x1b[1;33m--- [REVIEW REQUIRED: " + m.rule + "] " +
-                             std::to_string(r.hold.size()) + " bytes, " +
-                             std::to_string(lines) + " lines ---\x1b[0m\r\n" +
-                             "\x1b[1;33mSuspicious command:\x1b[0m " + m.snippet + "\r\n" +
-                             "\x1b[1;33mRisk explanation:\x1b[0m   " + m.explanation + "\r\n";
+                    banner = "\r\n\x1b[1;33m[REVIEW: " + m.rule + "]\x1b[0m (" +
+                             std::to_string(r.hold.size()) + "B, " +
+                             std::to_string(lines) + "L)\r\n" +
+                             "  \x1b[33mCommand:\x1b[0m " + m.snippet + "\r\n" +
+                             "  \x1b[33mRisk:\x1b[0m    " + m.explanation + "\r\n";
                 } else {
-                    banner = "\r\n\x1b[1;32m--- [SAFE] " +
-                             std::to_string(r.hold.size()) + " bytes, " +
-                             std::to_string(lines) + " lines ---\x1b[0m\r\n";
+                    banner = "\r\n\x1b[1;32m[SAFE]\x1b[0m (" +
+                             std::to_string(r.hold.size()) + "B, " +
+                             std::to_string(lines) + "L)\r\n";
                 }
 
                 std::string header =
                     banner +
-                    "\x1b[2m--- paste contents ---\x1b[0m\r\n" +
+                    "\x1b[2m---\x1b[0m\r\n" +
                     shown +
-                    "\r\n\x1b[1m--- press Enter (or y) to approve, Ctrl-C (or Esc/n) to cancel: \x1b[0m";
+                    "\r\n\x1b[2m---\x1b[0m\r\n" +
+                    "\x1b[1mExecute? [Enter/^C] \x1b[0m";
 
                 if (!write_all(STDOUT_FILENO, header.data(), header.size()))
                     break;
@@ -334,7 +335,7 @@ int main(int argc, char* argv[]) {
                     const char* ok = "\r\n\x1b[1;32m[approved]\x1b[0m\r\n";
                     write_all(STDOUT_FILENO, ok, std::strlen(ok));
                 } else {
-                    const char* no = "\r\n\x1b[1;31m[paste cancelled]\x1b[0m\r\n";
+                    const char* no = "\r\n\x1b[1;31m[cancelled]\x1b[0m\r\n";
                     write_all(STDOUT_FILENO, no, std::strlen(no));
                     // Send interrupt (Ctrl-C) to child master PTY so line editors
                     // (ble.sh, readline) reset input buffer and immediately repaint prompt
