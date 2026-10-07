@@ -17,7 +17,10 @@ struct Match {
     std::string explanation;  // explanation of the risk
 };
 
+struct Config;
+
 // Safety scanner that checks for known risky command patterns.
-Match classify(const std::string& paste);
+// Accepts an optional Config pointer for custom allowlists, disabled rules, and custom rules.
+Match classify(const std::string& paste, const Config* config = nullptr);
 
 }  // namespace trex

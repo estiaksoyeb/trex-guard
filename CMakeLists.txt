@@ -9,6 +9,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_executable(trex-guard
     src/main.cpp
     src/rules.cpp
+    src/config.cpp
 )
 
 target_link_libraries(trex-guard PRIVATE util)
@@ -18,6 +19,7 @@ enable_testing()
 add_executable(test_rules
     tests/test_rules.cpp
     src/rules.cpp
+    src/config.cpp
 )
 
 add_test(NAME test_rules COMMAND test_rules)

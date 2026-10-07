@@ -1,4 +1,5 @@
 #include "rules.h"
+#include "config.h"
 
 #include <regex>
 #include <string>
@@ -127,11 +128,23 @@ const std::vector<RegexRule>& get_regex_rules() {
 
 }  // namespace
 
-Match classify(const std::string& paste) {
+Match classify(const std::string& paste, const Config* config) {
+    // 1. Check allowlist from configuration
+    if (config) {
+        for (const auto& item : config->allowlist) {
+            if (!item.empty() && paste.find(item) != std::string::npos) {
+                return Match{}; // Allowlisted pastes are considered Safe
+            }
+        }
+    }
+
     Match review_match;
 
-    // Check literal substring rules first
+    // 2. Check literal substring rules
     for (const auto& r : kLiteralRules) {
+        if (config && config->disabled_rules.count(r.name) > 0) {
+            continue;
+        }
         if (paste.find(r.needle) != std::string::npos) {
             Match m;
             m.risk = r.risk;
@@ -145,9 +158,12 @@ Match classify(const std::string& paste) {
         }
     }
 
-    // Check regex pattern rules
+    // 3. Check regex pattern rules
     const auto& regex_rules = get_regex_rules();
     for (const auto& r : regex_rules) {
+        if (config && config->disabled_rules.count(r.name) > 0) {
+            continue;
+        }
         std::smatch sm;
         if (std::regex_search(paste, sm, r.pattern)) {
             Match m;
@@ -159,6 +175,32 @@ Match classify(const std::string& paste) {
                 return m;
             if (review_match.risk == Risk::Safe)
                 review_match = m;
+        }
+    }
+
+    // 4. Check user custom rules from configuration
+    if (config) {
+        for (const auto& cr : config->custom_rules) {
+            if (config->disabled_rules.count(cr.name) > 0) {
+                continue;
+            }
+            try {
+                std::regex re(cr.pattern);
+                std::smatch sm;
+                if (std::regex_search(paste, sm, re)) {
+                    Match m;
+                    m.risk = cr.risk;
+                    m.rule = cr.name;
+                    m.snippet = sm.str();
+                    m.explanation = cr.explanation;
+                    if (m.risk == Risk::Danger)
+                        return m;
+                    if (review_match.risk == Risk::Safe)
+                        review_match = m;
+                }
+            } catch (const std::regex_error&) {
+                // Ignore invalid user regexes gracefully
+            }
         }
     }
 

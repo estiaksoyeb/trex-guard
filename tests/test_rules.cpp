@@ -1,4 +1,5 @@
 #include "../src/rules.h"
+#include "../src/config.h"
 
 #include <cassert>
 #include <iostream>
@@ -92,6 +93,68 @@ int main() {
         } else {
             passed++;
         }
+    }
+
+    // Configuration tests
+    std::string ini_content = R"(
+[general]
+auto_approve_safe = true
+
+[allowlist]
+rm -rf /tmp/allowed_cache
+git push --force origin scratch
+
+[disabled_rules]
+git hard reset
+fork bomb
+
+[custom_rules]
+drop database | danger | \bdrop\s+database\b | Destructive drop database statement
+npm publish | review | \bnpm\s+publish\b | Publishes package to public registry
+)";
+
+    trex::Config cfg = trex::parse_config_string(ini_content);
+    if (!cfg.auto_approve_safe) {
+        std::cerr << "FAIL: cfg.auto_approve_safe should be true\n";
+        failed++;
+    } else {
+        passed++;
+    }
+
+    // Test allowlist overrides danger
+    trex::Match m_allowed = trex::classify("rm -rf /tmp/allowed_cache", &cfg);
+    if (m_allowed.risk != trex::Risk::Safe) {
+        std::cerr << "FAIL: allowlisted command was not marked Safe\n";
+        failed++;
+    } else {
+        passed++;
+    }
+
+    // Test disabled rules
+    trex::Match m_disabled = trex::classify("git reset --hard HEAD~1", &cfg);
+    if (m_disabled.risk != trex::Risk::Safe) {
+        std::cerr << "FAIL: disabled rule was still triggered\n";
+        failed++;
+    } else {
+        passed++;
+    }
+
+    // Test custom Danger rule
+    trex::Match m_custom_danger = trex::classify("psql -c 'drop database test'", &cfg);
+    if (m_custom_danger.risk != trex::Risk::Danger || m_custom_danger.rule != "drop database") {
+        std::cerr << "FAIL: custom danger rule did not trigger correctly\n";
+        failed++;
+    } else {
+        passed++;
+    }
+
+    // Test custom Review rule
+    trex::Match m_custom_review = trex::classify("npm publish --access public", &cfg);
+    if (m_custom_review.risk != trex::Risk::Review || m_custom_review.rule != "npm publish") {
+        std::cerr << "FAIL: custom review rule did not trigger correctly\n";
+        failed++;
+    } else {
+        passed++;
     }
 
     std::cout << "Tests run: " << (passed + failed)

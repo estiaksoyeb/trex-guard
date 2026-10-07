@@ -1,6 +1,7 @@
 #include <pty.h>
 
 #include "rules.h"
+#include "config.h"
 #include <signal.h>
 #include <sys/ioctl.h>
 #include <sys/select.h>
@@ -166,6 +167,7 @@ int main() {
     char buffer[8192];
     int exit_code = 1;
     PasteTap paste_tap;
+    trex::Config config = trex::load_config();
 
     while (true) {
         if (window_changed) {
@@ -232,7 +234,13 @@ int main() {
                     shown[shown.size() - 1] != '\r')
                     ++lines;
 
-                trex::Match m = trex::classify(r.hold);
+                trex::Match m = trex::classify(r.hold, &config);
+
+                if (m.risk == trex::Risk::Safe && config.auto_approve_safe) {
+                    if (!write_all(master, r.hold.data(), r.hold.size()))
+                        break;
+                    continue;
+                }
 
                 std::string banner;
                 if (m.risk == trex::Risk::Danger) {
