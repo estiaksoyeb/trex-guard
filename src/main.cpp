@@ -13,7 +13,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
+#include <fstream>
 #include <string>
+#include <vector>
 #include <iostream>
 
 namespace {
@@ -22,6 +24,20 @@ volatile sig_atomic_t window_changed = 0;
 volatile sig_atomic_t g_terminal_modified = 0;
 struct termios g_original{};
 pid_t g_child = -1;
+
+bool parent_has_norc() {
+    pid_t ppid = getppid();
+    std::string path = "/proc/" + std::to_string(ppid) + "/cmdline";
+    std::ifstream f(path, std::ios::binary);
+    if (!f.is_open())
+        return false;
+    std::string arg;
+    while (std::getline(f, arg, '\0')) {
+        if (arg == "--norc")
+            return true;
+    }
+    return false;
+}
 
 void handle_sigwinch(int) {
     window_changed = 1;
@@ -168,13 +184,37 @@ int main(int argc, char* argv[]) {
     if (child == 0) {
         setenv("TREX_GUARD_ACTIVE", "1", 1);
 
-        const char* shell = std::getenv("SHELL");
-        if (!shell || !*shell)
-            shell = "/bin/bash";
+        const char* default_shell = std::getenv("SHELL");
+        if (!default_shell || !*default_shell)
+            default_shell = "/bin/bash";
 
-        execl(shell, shell, "--login", static_cast<char*>(nullptr));
+        std::vector<const char*> args;
+        if (argc > 1) {
+            if (argv[1][0] == '-') {
+                args.push_back(default_shell);
+                for (int i = 1; i < argc; ++i) {
+                    if (std::strcmp(argv[i], "--force") != 0) {
+                        args.push_back(argv[i]);
+                    }
+                }
+            } else {
+                for (int i = 1; i < argc; ++i) {
+                    if (std::strcmp(argv[i], "--force") != 0) {
+                        args.push_back(argv[i]);
+                    }
+                }
+            }
+        } else {
+            args.push_back(default_shell);
+            if (parent_has_norc()) {
+                args.push_back("--norc");
+            }
+        }
+        args.push_back(nullptr);
 
-        std::cerr << "trex-guard: exec: "
+        execvp(args[0], const_cast<char* const*>(args.data()));
+
+        std::cerr << "trex-guard: execvp: "
                   << std::strerror(errno) << '\n';
         _exit(127);
     }

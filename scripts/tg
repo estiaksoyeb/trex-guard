@@ -19,7 +19,15 @@ if [ "$1" = "--version" ] || [ "$1" = "-v" ]; then
 fi
 
 # Prevent accidental recursive wrapping
-if [ "$TREX_GUARD_ACTIVE" = "1" ] && [ "$1" != "--force" ]; then
+is_force=0
+for arg in "$@"; do
+    if [ "$arg" = "--force" ]; then
+        is_force=1
+        break
+    fi
+done
+
+if [ "$TREX_GUARD_ACTIVE" = "1" ] && [ "$is_force" -eq 0 ]; then
     echo "Notice: A guarded shell is already active in this terminal session." >&2
     echo "To launch anyway, run: tg --force" >&2
     exit 0
