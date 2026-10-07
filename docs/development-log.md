@@ -235,6 +235,16 @@ Redesigned the human approval prompt and risk banners for compact readability:
 - **Header**: Compacted banner labels and byte/line indicators (e.g. `[HIGH RISK: rm -rf] (35B, 2L)`).
 - **Feedback**: Simplified cancellation feedback to `[cancelled]`.
 
+### Shell Argument Forwarding & Non-Login Child Spawning (2026-10-08)
+
+Resolved ble.sh auto-launch issue when running under `exec bash --norc`:
+
+- **Root Cause**: Previously, `trex-guard` hardcoded `execl(shell, shell, "--login", nullptr)`. A login shell always forces execution of `/etc/profile` and `~/.bashrc`, which in turn initialized `ble.sh` even if the user ran `exec bash --norc` in their outer terminal.
+- **Removed Forced `--login`**: Default child shell is now launched as an interactive shell without forced login file reloading.
+- **Argument Forwarding**: `tg` and `trex-guard` now accept arbitrary shell arguments (e.g. `tg --norc`, `tg bash --norc`, `tg zsh`).
+- **Parent Environment Inheritance**: `parent_has_norc()` checks `/proc/$PPID/cmdline`. If the parent terminal was started with `--norc`, the child shell automatically inherits `--norc`, keeping `ble.sh` disabled.
+
+
 
 
 
