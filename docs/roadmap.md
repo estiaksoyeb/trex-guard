@@ -37,10 +37,9 @@ It does not parse shell, so obfuscated/quoted forms evade it.
 - [x] destructive checkout/restore
 - [x] `dd`
 - [x] recursive permission changes
-- [x] `find ... -delete`
-- [ ] shell execution/evaluation
+- [x] shell execution/evaluation (eval, subshell -c, inline scripts)
 - [x] download-and-pipe-to-shell patterns
-- [ ] embedded scripts/heredocs
+- [x] embedded scripts/heredocs (heredoc piped to shell, encoded pipes)
 
 The scanner should eventually normalize commands instead of relying only on raw substring matching.
 

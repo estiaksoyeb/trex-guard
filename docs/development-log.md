@@ -200,6 +200,18 @@ Hardened terminal restoration and signal safety in `src/main.cpp`:
 - **Signal Handlers**: Installed signal handlers for `SIGTERM`, `SIGHUP`, `SIGINT`, and `SIGQUIT` that invoke `restore_terminal()`, forward the signal to the child PTY, reset the signal handler to `SIG_DFL`, and re-raise. This prevents the parent terminal from remaining stuck in raw mode (`echo` disabled, staircase newlines) if the guard process is unexpectedly killed or terminated.
 - **State Guard**: Added atomic flag `g_terminal_modified` ensuring `tcsetattr` is only called if raw mode was actually engaged.
 
+### Phase 3 Advanced Rules: Shell Eval, Heredocs & Script Execution (2026-10-08)
+
+Added detection rules for indirect command execution and script injection:
+
+- **Shell Eval (`Risk::Danger`)**: Detects `eval $(...)`, `eval "$..."`, and dynamic string evaluations that evade direct static token analysis.
+- **Encoded Shell Pipes (`Risk::Danger`)**: Detects `base64 -d | sh` and variants that pipe decoded binary/text payloads directly into a shell interpreter.
+- **Heredocs to Shell (`Risk::Danger`)**: Detects inline heredoc payloads executed by piping or redirecting into a shell interpreter (`bash << 'EOF'`, `<< 'EOF' | sh`).
+- **Inline Script Execution (`Risk::Danger`)**: Detects Python (`python -c ... os.system(...)`), Perl, and Ruby one-liners that invoke subprocesses or execute system commands. Innocent scripts (e.g. `python3 -c "print('hi')"`) remain `[SAFE]`.
+- **Subshell Execution (`Risk::Review`)**: Flags `bash -c "..."`, `sh -c "..."`, and `sudo sh -c "..."` for operator review.
+- **Verification**: Added 10 new test assertions in `tests/test_rules.cpp`. Total test suite passes at 59/59 (100%).
+
+
 
 
 
