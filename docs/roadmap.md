@@ -31,15 +31,15 @@ It does not parse shell, so obfuscated/quoted forms evade it.
 - [x] `git reset --hard`
 - [x] filesystem formatting tools (`mkfs`)
 - [x] fork bomb
-- [ ] Narrow `curl`/`wget` rules to actual pipe-to-shell forms
+- [x] Narrow `curl`/`wget` rules to actual pipe-to-shell forms
 - [ ] Replace literal scanner with a real shell parser
-- [ ] destructive `git clean`
-- [ ] destructive checkout/restore
-- [ ] `dd`
-- [ ] recursive permission changes
-- [ ] `find ... -delete`
+- [x] destructive `git clean`
+- [x] destructive checkout/restore
+- [x] `dd`
+- [x] recursive permission changes
+- [x] `find ... -delete`
 - [ ] shell execution/evaluation
-- [ ] download-and-pipe-to-shell patterns
+- [x] download-and-pipe-to-shell patterns
 - [ ] embedded scripts/heredocs
 
 The scanner should eventually normalize commands instead of relying only on raw substring matching.

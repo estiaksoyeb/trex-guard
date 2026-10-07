@@ -143,3 +143,18 @@ Known issues / deferrals:
 - Approved paste is echoed twice on screen (guard + Bash line discipline).
 - After cancel, ble.sh in the outer terminal needs an extra Enter to
   repaint; this is outside the guard.
+
+### Phase 3 scanner refinements & test suite (2026-10-08)
+
+Refined safety scanner rules and added comprehensive test coverage:
+
+- Narrowed `curl` and `wget` rules to actual pipe-to-shell patterns (e.g. `curl ... | sh`, `wget ... | bash`, `curl ... | sudo bash`). Plain curl/wget downloads are no longer falsely flagged as dangerous.
+- Added regex rules for destructive `git clean` (`-f`, `-fd`, `-fdx`, `--force`).
+- Added regex rules for destructive `git checkout` / `git restore` (`git checkout -- .`, `git checkout -f`, `git restore .`, `--worktree`).
+- Added regex rules for `git push --force` (`--force`, `-f`, `--force-with-lease`).
+- Added rules for `chmod` broad/root recursive permissions changes (`chmod -R 777 /`, `chmod -R 000`, etc.).
+- Added rules for `find ... -delete` and `find ... -exec rm`.
+- Added rules for block device overwrites (`> /dev/sd*`, `> /dev/nvme*`, etc.).
+- Created `tests/test_rules.cpp` with 43 test cases covering both safe and dangerous command variations.
+- Integrated `test_rules` target and CTest in `CMakeLists.txt`. All 43 test assertions pass cleanly.
+
