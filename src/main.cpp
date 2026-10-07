@@ -100,7 +100,23 @@ bool write_all(int fd, const char* data, size_t size) {
 
 }  // namespace
 
-int main() {
+int main(int argc, char* argv[]) {
+    if (argc > 1) {
+        std::string arg = argv[1];
+        if (arg == "--help" || arg == "-h") {
+            std::cout << "TREX Guard - Terminal paste safety gate\n\n"
+                      << "Usage:\n"
+                      << "  trex-guard            Launch guarded shell\n"
+                      << "  trex-guard --help     Show this help message\n"
+                      << "  trex-guard --version  Show version information\n";
+            return 0;
+        }
+        if (arg == "--version" || arg == "-v") {
+            std::cout << "trex-guard version 0.1.0\n";
+            return 0;
+        }
+    }
+
     struct termios original{};
     if (tcgetattr(STDIN_FILENO, &original) == -1) {
         std::cerr << "trex-guard: tcgetattr: "
@@ -125,6 +141,8 @@ int main() {
     }
 
     if (child == 0) {
+        setenv("TREX_GUARD_ACTIVE", "1", 1);
+
         const char* shell = std::getenv("SHELL");
         if (!shell || !*shell)
             shell = "/bin/bash";

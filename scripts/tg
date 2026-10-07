@@ -1,0 +1,43 @@
+#!/bin/sh
+# tg - TREX Guard Launcher
+
+set -e
+
+if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
+    echo "tg - TREX Guard Launcher"
+    echo ""
+    echo "Usage:"
+    echo "  tg               Launch a guarded terminal shell"
+    echo "  tg --help        Show this help message"
+    echo "  tg --version     Show version information"
+    exit 0
+fi
+
+if [ "$1" = "--version" ] || [ "$1" = "-v" ]; then
+    echo "tg (trex-guard wrapper) 0.1.0"
+    exit 0
+fi
+
+# Prevent accidental recursive wrapping
+if [ "$TREX_GUARD_ACTIVE" = "1" ] && [ "$1" != "--force" ]; then
+    echo "Notice: A guarded shell is already active in this terminal session." >&2
+    echo "To launch anyway, run: tg --force" >&2
+    exit 0
+fi
+
+# Locate trex-guard binary: PATH, or repo build directory
+if command -v trex-guard >/dev/null 2>&1; then
+    exec trex-guard "$@"
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -x "$SCRIPT_DIR/../build/trex-guard" ]; then
+    exec "$SCRIPT_DIR/../build/trex-guard" "$@"
+fi
+
+if [ -x "$SCRIPT_DIR/trex-guard" ]; then
+    exec "$SCRIPT_DIR/trex-guard" "$@"
+fi
+
+echo "Error: trex-guard executable not found in PATH or adjacent directories." >&2
+exit 1
