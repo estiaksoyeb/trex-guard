@@ -12,8 +12,9 @@
 
 ## Phase 2 — Paste interception
 
-- [ ] Determine reliable paste-boundary behavior through the PTY
-- [ ] Capture a complete paste without executing it
+- [x] Determine reliable paste-boundary behavior through the PTY
+- [x] Capture a complete paste without executing it
+- [ ] Gate forwarding: buffer the paste and release only on approval
 - [ ] Preserve ordinary typing
 - [ ] Preserve Ble.sh compatibility
 - [ ] Release captured input after approval

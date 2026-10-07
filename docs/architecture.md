@@ -50,11 +50,31 @@ The prototype currently:
 6. Forwards child output to the terminal.
 7. Waits for the child shell to exit.
 
-The prototype does **not** currently:
+The prototype currently includes a temporary observe-only paste detector
+in src/main.cpp (struct PasteTap). It is fed every byte read from the
+terminal and tracks bracketed-paste boundaries across read chunks,
+logging CHUNK, PASTE_START, PASTE_END, and OUT events to
+/tmp/trex-paste.log. It does not gate forwarding: bytes still reach the
+PTY master unchanged.
 
-- detect pastes
+Confirmed behavior (SEEN):
+
+- Bracketed-paste markers arrive intact on the proxy's stdin.
+- A 3000-line paste (19893 bytes) was captured as a single
+  PASTE_START/PASTE_END pair despite being split across six reads of
+  about 4095 bytes each, with the correct newline count.
+
+Known constraint (SEEN in an earlier tap, not yet re-tested here):
+
+- While a command is running, the child shell disables paste mode, so
+  pastes made at that moment arrive without bracketed markers. This
+  bounds what a marker-based detector can intercept.
+
+The prototype does not currently:
+
 - scan commands
 - classify risk
+- gate forwarding on approval
 - modify shell configuration
 - install itself
 - persist configuration

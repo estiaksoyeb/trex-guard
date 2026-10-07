@@ -79,3 +79,37 @@ Run the transparent PTY prototype and verify:
 - shell exit status
 
 Only after the transparent PTY behavior is established should paste interception be implemented.
+
+### Paste detection test results (2026-10-08)
+
+Added a temporary observe-only PasteTap state machine in src/main.cpp.
+It reads every byte from stdin, tracks the bracketed-paste markers
+across chunk boundaries, and logs to /tmp/trex-paste.log.
+
+Test 1 — three-line paste:
+
+    CHUNK 40
+    PASTE_START
+    PASTE_END bytes=28 newlines=2 text=echo ONE\recho TWO\recho THREE
+
+One read; one START/END pair. newlines=2 because the payload has two
+carriage-return separators and no trailing terminator. Correct.
+
+Test 2 — 3000-line paste (seq 1 3000 | sed 's/^/: /' | clip):
+
+    CHUNK 4095   (x5)
+    CHUNK 3525
+    PASTE_START
+    PASTE_END bytes=19893 newlines=3000
+
+Six reads, still exactly one START/END pair; bytes and newlines match
+the payload. Confirms cross-chunk state tracking works.
+
+Known constraint: when a command is running, the child shell sends the
+paste-mode-off sequence, so pastes at that moment arrive without
+bracketed markers. A marker-based detector cannot intercept those.
+
+Next implementation step: gate forwarding. On PASTE_START, stop writing
+paste bytes to the master and accumulate them; on PASTE_END, present
+the buffer for approval and forward or drop. Remove the temporary
+logging once the gate is in place.

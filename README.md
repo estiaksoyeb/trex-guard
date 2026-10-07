@@ -6,11 +6,16 @@ The goal is to intercept pasted command blocks before they reach the shell, anal
 
 ## Current status
 
-Phase 1 — PTY foundation: **built, not yet behavior-validated**
+Phase 1 — PTY foundation: **behavior-validated for transparent forwarding**
 
-The current prototype creates a child shell inside a pseudo-terminal and transparently forwards input/output between the user's terminal and that shell.
+Phase 2 — Paste interception: **in progress (observe-only)**
 
-No safety scanning exists yet.
+The current prototype creates a child shell inside a pseudo-terminal and
+transparently forwards input/output between the user's terminal and that
+shell. A temporary observe-only paste detector logs bracketed-paste
+boundaries; it does not yet gate forwarding.
+
+No safety scanning or approval gate exists yet.
 
 ## Development principles
 
