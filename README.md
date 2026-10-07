@@ -12,11 +12,14 @@ Phase 2 — Paste interception: **done** (hold → approve/cancel → forward)
 
 Phase 3 — Safety scanner: **in progress** (pattern scanner with test suite)
 
+Phase 4 — Human approval UI: **done** (tiered risk, snippet display, explanations, Enter/Ctrl-C keys)
+
 The current prototype creates a child shell inside a pseudo-terminal and
 transparently forwards input/output between the user's terminal and that
-shell. Bracketed pastes are held for review: a header shows the text,
-flags known-dangerous patterns (`[DANGER: ...]`), and asks for `y` to
-run or any other key to cancel.
+shell. Bracketed pastes are held for review: a structured banner presents the
+risk tier (`SAFE`, `REVIEW REQUIRED`, or `HIGH RISK`), highlights suspicious command
+snippets and risk rationale, displays the payload, and prompts the user for
+approval (<kbd>Enter</kbd>/`y`) or cancellation (<kbd>Ctrl-C</kbd>/`n`).
 
 The scanner detects dangerous command patterns (destructive git commands,
 recursive deletions, pipe-to-shell downloads, block device writes, mkfs, fork bombs)

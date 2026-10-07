@@ -46,13 +46,13 @@ The scanner should eventually normalize commands instead of relying only on raw 
 
 ## Phase 4 — Human approval UI
 
-- [ ] Safe result
-- [ ] Review result
-- [ ] High-risk result
-- [ ] Exact suspicious command display
-- [ ] Explanation of risk
-- [ ] Enter = approve
-- [ ] Ctrl-C = cancel
+- [x] Safe result
+- [x] Review result
+- [x] High-risk result
+- [x] Exact suspicious command display
+- [x] Explanation of risk
+- [x] Enter = approve
+- [x] Ctrl-C = cancel
 
 ## Phase 5 — Configuration
 

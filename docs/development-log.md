@@ -158,3 +158,14 @@ Refined safety scanner rules and added comprehensive test coverage:
 - Created `tests/test_rules.cpp` with 43 test cases covering both safe and dangerous command variations.
 - Integrated `test_rules` target and CTest in `CMakeLists.txt`. All 43 test assertions pass cleanly.
 
+### Phase 4 Human approval UI (2026-10-08)
+
+Implemented the full interactive human approval UI:
+
+- **Tiered Risk Classification**: Added `Risk::Safe`, `Risk::Review`, and `Risk::Danger`. High-risk commands (e.g. `rm -rf`, raw disk writes, mkfs, pipe-to-shell, fork bomb) take precedence, while moderate repository-destructive actions (`git clean`, `git reset --hard`, `git checkout -f`, `git push --force`) trigger Review.
+- **Exact Snippet and Explanation**: `trex::classify()` now populates `m.snippet` with the exact matched command substring (extracted via `std::smatch`) and `m.explanation` with a concise risk explanation.
+- **Terminal UI**: Banners format risk tier in distinct colors/headers (`[HIGH RISK]`, `[REVIEW REQUIRED]`, `[SAFE]`), display the matched snippet and risk rationale, format paste contents, and prompt the operator.
+- **Approval Keybindings**: Operator can approve with <kbd>Enter</kbd> (`\r`/`\n`) or `y`/`Y`, or cancel with <kbd>Ctrl-C</kbd> (`\x03`), <kbd>Esc</kbd> (`\x1b`), or `n`/`N`. Cancelled pastes are dropped immediately without execution.
+- **Tests**: Expanded unit tests to 44 assertions testing tier classification, snippet presence, explanation presence, and danger-over-review precedence.
+
+
