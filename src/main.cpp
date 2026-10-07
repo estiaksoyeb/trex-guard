@@ -19,9 +19,31 @@
 namespace {
 
 volatile sig_atomic_t window_changed = 0;
+volatile sig_atomic_t g_terminal_modified = 0;
+struct termios g_original{};
+pid_t g_child = -1;
 
 void handle_sigwinch(int) {
     window_changed = 1;
+}
+
+void restore_terminal() {
+    if (g_terminal_modified) {
+        tcsetattr(STDIN_FILENO, TCSAFLUSH, &g_original);
+        g_terminal_modified = 0;
+    }
+}
+
+void handle_cleanup_signal(int sig) {
+    restore_terminal();
+    if (g_child > 0) {
+        kill(g_child, sig);
+    }
+    struct sigaction sa{};
+    sa.sa_handler = SIG_DFL;
+    sigemptyset(&sa.sa_mask);
+    sigaction(sig, &sa, nullptr);
+    raise(sig);
 }
 
 // Result of feeding one chunk of stdin to the paste detector.
@@ -123,6 +145,8 @@ int main(int argc, char* argv[]) {
                   << std::strerror(errno) << '\n';
         return 1;
     }
+    g_original = original;
+    std::atexit(restore_terminal);
 
     struct winsize window{};
     if (ioctl(STDIN_FILENO, TIOCGWINSZ, &window) == -1) {
@@ -139,6 +163,7 @@ int main(int argc, char* argv[]) {
                   << std::strerror(errno) << '\n';
         return 1;
     }
+    g_child = child;
 
     if (child == 0) {
         setenv("TREX_GUARD_ACTIVE", "1", 1);
@@ -165,6 +190,16 @@ int main(int argc, char* argv[]) {
         waitpid(child, nullptr, 0);
         return 1;
     }
+    g_terminal_modified = 1;
+
+    struct sigaction sa_clean{};
+    sa_clean.sa_handler = handle_cleanup_signal;
+    sigemptyset(&sa_clean.sa_mask);
+    sa_clean.sa_flags = 0;
+    sigaction(SIGTERM, &sa_clean, nullptr);
+    sigaction(SIGHUP, &sa_clean, nullptr);
+    sigaction(SIGINT, &sa_clean, nullptr);
+    sigaction(SIGQUIT, &sa_clean, nullptr);
 
     struct sigaction old_sigwinch{};
     struct sigaction sigwinch{};
@@ -175,7 +210,7 @@ int main(int argc, char* argv[]) {
     if (sigaction(SIGWINCH, &sigwinch, &old_sigwinch) == -1) {
         std::cerr << "trex-guard: sigaction: "
                   << std::strerror(errno) << '\n';
-        tcsetattr(STDIN_FILENO, TCSAFLUSH, &original);
+        restore_terminal();
         kill(child, SIGHUP);
         close(master);
         waitpid(child, nullptr, 0);
@@ -330,7 +365,7 @@ int main(int argc, char* argv[]) {
     }
 
     sigaction(SIGWINCH, &old_sigwinch, nullptr);
-    tcsetattr(STDIN_FILENO, TCSAFLUSH, &original);
+    restore_terminal();
     close(master);
 
     int status = 0;
