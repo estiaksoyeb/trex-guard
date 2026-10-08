@@ -270,6 +270,17 @@ Resolved silent auto-approval flaw for unprompted file deletions (`rm`, `rmdir`,
   - Trimmed leading punctuation/whitespace from matched regex snippets.
 - **Verification**: Added 7 test cases covering `rm`, `unlink`, `shred`, `git checkout .`, and safe `--rm` flags. 68/68 automated tests pass.
 
+### PTY & Terminal UX: Bracketed Paste Preservation (`ble.sh` Zero-Lag) (2026-10-08)
+
+Resolved severe input processing lag (`██▌ processing input...`) in `ble.sh` and enhanced cross-shell paste execution:
+
+- **Root Cause**: Modern terminals wrap pasted text in `\x1b[200~` and `\x1b[201~`. `trex-guard` stripped these markers to scan the command, and previously forwarded raw text to the child PTY. `ble.sh` consequently saw hundreds or thousands of unbracketed keystrokes and was forced to parse, tokenize, and evaluate each character individually in pure Bash script.
+- **Solution (`forward_paste_payload`)**:
+  - Re-wraps forwarded payload in bracketed paste markers (`\x1b[200~` + data + `\x1b[201~`), triggering `ble.sh`'s native batch-insert mode for instantaneous rendering without character-by-character decode lag.
+  - Automatically appends POSIX line acceptance (`\n`) for approved prompts and pastes with trailing newlines, ensuring immediate command execution across both `ble.sh` and GNU Readline (`bash --norc`).
+- **Verification**: End-to-end PTY integration tests verified that both single-line and multi-line pastes execute immediately in `ble.sh` and `bash --norc` with `processing input` eliminated.
+
+
 
 
 
