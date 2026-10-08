@@ -209,6 +209,25 @@ bool write_all(int fd, const char* data, size_t size) {
     return true;
 }
 
+// Forwards approved paste payload wrapped in bracketed-paste markers so line
+// editors (ble.sh, readline) can use fast batch insertion without character decode lag.
+bool forward_paste_payload(int master, const std::string& data, bool submit) {
+    const char bp_begin[] = "\x1b[200~";
+    const char bp_end[] = "\x1b[201~";
+    if (!write_all(master, bp_begin, sizeof(bp_begin) - 1))
+        return false;
+    if (!write_all(master, data.data(), data.size()))
+        return false;
+    if (!write_all(master, bp_end, sizeof(bp_end) - 1))
+        return false;
+    if (submit) {
+        const char newline = '\n';
+        if (!write_all(master, &newline, 1))
+            return false;
+    }
+    return true;
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -403,7 +422,9 @@ int main(int argc, char* argv[]) {
                 trex::Match m = trex::classify(r.hold, &config);
 
                 if (m.risk == trex::Risk::Safe && config.auto_approve_safe) {
-                    if (!write_all(master, r.hold.data(), r.hold.size()))
+                    bool has_trailing_newline =
+                        !r.hold.empty() && (r.hold.back() == '\n' || r.hold.back() == '\r');
+                    if (!forward_paste_payload(master, r.hold, has_trailing_newline))
                         break;
                     continue;
                 }
@@ -440,7 +461,7 @@ int main(int argc, char* argv[]) {
                 Decision decision = read_approval_decision(master, &window);
 
                 if (decision == Decision::Approve) {
-                    if (!write_all(master, r.hold.data(), r.hold.size()))
+                    if (!forward_paste_payload(master, r.hold, true))
                         break;
                     const char* ok = "\r\n\x1b[1;32m[approved]\x1b[0m\r\n";
                     write_all(STDOUT_FILENO, ok, std::strlen(ok));
