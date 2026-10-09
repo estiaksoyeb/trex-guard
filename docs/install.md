@@ -51,8 +51,13 @@ This installs:
 ## 3. Shell Integration
 
 ### Optional Alias & Prompt Indicator
-Add this to your `~/.bashrc` or `~/.zshrc`:
+To display a `[GUARD]` badge in your prompt whenever `tg` is active, add this one-liner to your `~/.bashrc`:
 
+```bash
+[ "$TREX_GUARD_ACTIVE" = "1" ] && PS1="\[\033[1;32m\][GUARD]\[\033[0m\] $PS1"
+```
+
+Alternatively, source the bundled helper script:
 ```bash
 # If installed system-wide:
 source /usr/local/share/trex-guard/shell-integration.bash
@@ -63,7 +68,7 @@ source ~/.local/share/trex-guard/shell-integration.bash
 
 This provides:
 - The `tg` shortcut to launch the guard.
-- The `trex_guard_indicator` function to display `[GUARD]` in your prompt when active.
+- The `trex_guard_indicator` function to display `[GUARD]` in your custom prompt.
 - Automatically prevents nested guards.
 
 ### Auto-launch on Terminal Open
