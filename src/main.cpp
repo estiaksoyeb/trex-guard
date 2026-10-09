@@ -66,6 +66,8 @@ void handle_sigwinch(int) {
 
 void restore_terminal() {
     if (g_terminal_modified) {
+        const char disable_bp[] = "\x1b[?2004l";
+        (void)write(STDOUT_FILENO, disable_bp, sizeof(disable_bp) - 1);
         tcsetattr(STDIN_FILENO, TCSAFLUSH, &g_original);
         g_terminal_modified = 0;
     }
@@ -323,6 +325,8 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     g_terminal_modified = 1;
+    const char enable_bp[] = "\x1b[?2004h";
+    (void)write_all(STDOUT_FILENO, enable_bp, sizeof(enable_bp) - 1);
 
     struct sigaction sa_clean{};
     sa_clean.sa_handler = handle_cleanup_signal;
@@ -395,6 +399,49 @@ int main(int argc, char* argv[]) {
             }
 
             PasteFeedResult r = paste_tap.feed(buffer, static_cast<size_t>(n));
+
+            // Fallback unbracketed paste burst detection:
+            // If we are not inside bracketed paste, but received unbracketed input that:
+            // 1. Contains newlines ('\n' or '\r') and size > 1 (multi-line script or command with Enter)
+            // 2. OR is a burst (>= 8 chars not starting with \x1b)
+            if (!paste_tap.in_paste && !r.paste_complete && !r.forward.empty()) {
+                bool has_newline = false;
+                for (char c : r.forward) {
+                    if (c == '\n' || c == '\r') {
+                        has_newline = true;
+                        break;
+                    }
+                }
+                bool is_unbracketed_burst =
+                    (has_newline && r.forward.size() > 1) ||
+                    (r.forward.size() >= 8 && static_cast<unsigned char>(r.forward[0]) != 0x1b);
+
+                if (is_unbracketed_burst) {
+                    std::string held_paste = std::move(r.forward);
+                    r.forward.clear();
+
+                    // Drain remaining burst bytes from STDIN with a 15ms timeout
+                    while (true) {
+                        fd_set drain_fds;
+                        FD_ZERO(&drain_fds);
+                        FD_SET(STDIN_FILENO, &drain_fds);
+                        struct timeval tv{0, 15000}; // 15 ms
+                        int res = select(STDIN_FILENO + 1, &drain_fds, nullptr, nullptr, &tv);
+                        if (res > 0 && FD_ISSET(STDIN_FILENO, &drain_fds)) {
+                            char drain_buf[4096];
+                            ssize_t dn = read(STDIN_FILENO, drain_buf, sizeof(drain_buf));
+                            if (dn > 0) {
+                                held_paste.append(drain_buf, static_cast<size_t>(dn));
+                                continue;
+                            }
+                        }
+                        break;
+                    }
+
+                    r.hold = std::move(held_paste);
+                    r.paste_complete = true;
+                }
+            }
 
             if (!r.forward.empty() &&
                 !write_all(master, r.forward.data(), r.forward.size()))
@@ -521,10 +568,19 @@ int main(int argc, char* argv[]) {
                 break;
             }
 
-            if (!write_all(
+            // Suppress child attempts to disable bracketed paste mode on the outer terminal
+            const std::string bp_off = "\x1b[?2004l";
+            std::string out_data(buffer, static_cast<size_t>(n));
+            size_t off_pos = 0;
+            while ((off_pos = out_data.find(bp_off, off_pos)) != std::string::npos) {
+                out_data.erase(off_pos, bp_off.size());
+            }
+
+            if (!out_data.empty() &&
+                !write_all(
                     STDOUT_FILENO,
-                    buffer,
-                    static_cast<size_t>(n)))
+                    out_data.data(),
+                    out_data.size()))
                 break;
         }
     }

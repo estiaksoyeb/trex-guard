@@ -320,7 +320,20 @@ Replaced brittle, monolithic regular expressions with a structured shell AST par
      - **File Deletion Engine**: Inspects argument flags on `rm` for recursive and force combinations across any argument position, correctly identifying `rm -rf` vs single-file deletion.
      - **Pipeline Correlation**: Correlates upstream download utilities (`curl`, `wget`) directly with downstream shell interpreters (`bash`, `sh`, `zsh`).
      - **Chmod Engine**: Semantically detects recursive flags combined with destructive permissions masks or root paths.
-- **Verification**: Added extensive unit tests covering Git reset permutations, global flags, argument reordering, split `rm` flags, and wrapper prefixes (90/90 tests pass).
+- **Verification**: Added extensive unit tests covering Git reset permutations, global flags, argument reordering, split `rm` flags, and wrapper prefixes (91/91 tests pass).
+
+### Terminal Hardening: Persistent Bracketed Paste & Unbracketed Burst Detection (2026-10-09)
+
+Fixed paste leakage occurring when pasting outside an idle Readline prompt or in terminals sending unbracketed clipboard payloads:
+
+- **Root Cause**:
+  1. *Child Shell Mode Disabling*: Whenever a command or child script executes, Readline turns off bracketed paste mode (`\x1b[?2004l`). When pasted at that transition, the terminal sends raw keystrokes without `\x1b[200~` markers.
+  2. *PasteTap Blindness*: `PasteTap` previously assumed all pastes arrive with `\x1b[200~`. Raw unbracketed input was forwarded directly to the shell as manual typing.
+- **Solution**:
+  1. *Persistent Outer Bracketed Mode*: `trex-guard` now explicitly emits `\x1b[?2004h` to `STDOUT_FILENO` on raw mode startup (and restores with `\x1b[?2004l` on exit), and suppresses child attempts to disable it (`\x1b[?2004l`) in master output.
+  2. *Unbracketed Multi-Line & Burst Detection*: Stdin reader detects unbracketed input containing newlines (`\n` or `\r` with size > 1) or large bursts (`size >= 8`), drains the burst using a 15ms `select` timeout, and routes the accumulated payload directly into `classify()` and the security review prompt.
+- **Verification**: Verified via automated PTY tests that unbracketed multi-line pastes containing `git reset HEAD~1 --hard` trigger the Security Review prompt, while normal single-character typing continues without delay.
+
 
 
 
