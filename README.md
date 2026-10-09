@@ -30,19 +30,22 @@ It intercepts multi-line pasted commands before they reach the shell, analyzes t
 
 ## Quick Start
 
-### 1. Build & Test
+### 1-Line Install (Recommended — No C/C++ Environment Needed)
+
 ```bash
-cmake -B build
-cmake --build build
-./build/test_rules
+curl -fsSL https://raw.githubusercontent.com/estiaksoyeb/trex-guard/master/scripts/install.sh | bash
 ```
 
-### 2. Install Globally
+*(Installs prebuilt binaries for your architecture, sets up default configuration, and configures the `tg` launcher)*
+
+---
+
+### Alternative: Build & Install From Source
+
 ```bash
-# Installs tg and trex-guard into /usr/local/bin
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build
 sudo cmake --install build
-# or user-local (~/.local/bin):
-cmake --install build --prefix ~/.local
 ```
 
 ### 3. Launch

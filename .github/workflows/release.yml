@@ -1,0 +1,86 @@
+---
+name: Release
+
+"on":
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-release:
+    name: Build & Package (${{ matrix.target.name }})
+    runs-on: ${{ matrix.target.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - name: linux-x86_64
+            os: ubuntu-latest
+            arch: x86_64
+            cmake_flags: >-
+              -DCMAKE_EXE_LINKER_FLAGS='-static-libgcc -static-libstdc++'
+          - name: linux-aarch64
+            os: ubuntu-24.04-arm
+            arch: aarch64
+            cmake_flags: >-
+              -DCMAKE_EXE_LINKER_FLAGS='-static-libgcc -static-libstdc++'
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure CMake
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            ${{ matrix.target.cmake_flags }}
+
+      - name: Build Targets
+        run: |
+          cmake --build build --config Release
+
+      - name: Run Test Suite
+        run: |
+          ./build/test_rules
+
+      - name: Prepare Release Package
+        run: |
+          STAGE_DIR="trex-guard-${{ matrix.target.arch }}"
+          ARCHIVE_NAME="trex-guard-${{ matrix.target.arch }}.tar.gz"
+          mkdir -p "${STAGE_DIR}"
+          cp build/trex-guard "${STAGE_DIR}/"
+          cp scripts/tg "${STAGE_DIR}/"
+          cp examples/config.ini "${STAGE_DIR}/"
+          cp scripts/shell-integration.bash "${STAGE_DIR}/"
+          cp README.md "${STAGE_DIR}/"
+          tar -czf "${ARCHIVE_NAME}" -C "${STAGE_DIR}" .
+
+      - name: Upload Release Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: trex-guard-${{ matrix.target.arch }}.tar.gz
+          path: trex-guard-${{ matrix.target.arch }}.tar.gz
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: build-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download Build Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*.tar.gz
+          generate_release_notes: true
+          draft: false
+          prerelease: false

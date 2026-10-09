@@ -1,10 +1,26 @@
 # Installation and Integration Guide
 
-TREX Guard can be built, installed, and integrated into your shell environment with standard CMake tooling.
+TREX Guard can be installed via a quick one-line script (no compiler needed) or built from source with CMake.
 
 ---
 
-## 1. Building and Running Locally
+## 1. Quick Install (No C/C++ Environment Required)
+
+If you don't have a C++ compiler or CMake installed, run the automated installer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/estiaksoyeb/trex-guard/master/scripts/install.sh | bash
+```
+
+This automatically:
+- Detects your system architecture (`x86_64`, `aarch64`, etc.).
+- Downloads the matching precompiled static release.
+- Installs `trex-guard` and the `tg` launcher into your `$PATH` (`/usr/local/bin`, `$PREFIX/bin`, or `~/.local/bin`).
+- Sets up default configuration at `~/.config/trex-guard/config.ini`.
+
+---
+
+## 2. Building and Running From Source
 
 To build without installing system-wide:
 
