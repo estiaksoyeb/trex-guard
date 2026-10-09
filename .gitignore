@@ -8,3 +8,5 @@ CMakeUserPresets.json
 .vscode/
 *.swp
 *.swo
+*.jpg
+*.png

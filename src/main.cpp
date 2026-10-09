@@ -429,30 +429,51 @@ int main(int argc, char* argv[]) {
                     continue;
                 }
 
-                std::string banner;
+                std::string review_section;
                 if (m.risk == trex::Risk::Danger) {
-                    banner = "\r\n\x1b[1;31m[HIGH RISK: " + m.rule + "]\x1b[0m (" +
-                             std::to_string(r.hold.size()) + "B, " +
-                             std::to_string(lines) + "L)\r\n" +
-                             "  \x1b[31mCommand:\x1b[0m " + m.snippet + "\r\n" +
-                             "  \x1b[31mRisk:\x1b[0m    " + m.explanation + "\r\n";
+                    if (m.matches.size() > 1) {
+                        review_section = "\x1b[1;31m[HIGH RISK]\x1b[0m (" +
+                                         std::to_string(m.matches.size()) +
+                                         " flagged commands found):\r\n";
+                        for (size_t i = 0; i < m.matches.size(); ++i) {
+                            const auto& item = m.matches[i];
+                            const char* tag_color = (item.risk == trex::Risk::Danger) ? "\x1b[1;31m" : "\x1b[1;33m";
+                            review_section += "  " + std::to_string(i + 1) + ". " +
+                                              tag_color + "[" + item.rule + "]\x1b[0m " + item.snippet + "\r\n" +
+                                              "     \x1b[2mRisk:\x1b[0m " + item.explanation + "\r\n";
+                        }
+                    } else {
+                        review_section = "\x1b[1;31m[HIGH RISK: " + m.rule + "]\x1b[0m\r\n" +
+                                         "  \x1b[31mCommand:\x1b[0m " + m.snippet + "\r\n" +
+                                         "  \x1b[31mRisk:\x1b[0m    " + m.explanation + "\r\n";
+                    }
                 } else if (m.risk == trex::Risk::Review) {
-                    banner = "\r\n\x1b[1;33m[REVIEW: " + m.rule + "]\x1b[0m (" +
-                             std::to_string(r.hold.size()) + "B, " +
-                             std::to_string(lines) + "L)\r\n" +
-                             "  \x1b[33mCommand:\x1b[0m " + m.snippet + "\r\n" +
-                             "  \x1b[33mRisk:\x1b[0m    " + m.explanation + "\r\n";
+                    if (m.matches.size() > 1) {
+                        review_section = "\x1b[1;33m[REVIEW]\x1b[0m (" +
+                                         std::to_string(m.matches.size()) +
+                                         " flagged commands found):\r\n";
+                        for (size_t i = 0; i < m.matches.size(); ++i) {
+                            const auto& item = m.matches[i];
+                            review_section += "  " + std::to_string(i + 1) + ". \x1b[1;33m[" +
+                                              item.rule + "]\x1b[0m " + item.snippet + "\r\n" +
+                                              "     \x1b[2mRisk:\x1b[0m " + item.explanation + "\r\n";
+                        }
+                    } else {
+                        review_section = "\x1b[1;33m[REVIEW: " + m.rule + "]\x1b[0m\r\n" +
+                                         "  \x1b[33mCommand:\x1b[0m " + m.snippet + "\r\n" +
+                                         "  \x1b[33mRisk:\x1b[0m    " + m.explanation + "\r\n";
+                    }
                 } else {
-                    banner = "\r\n\x1b[1;32m[SAFE]\x1b[0m (" +
-                             std::to_string(r.hold.size()) + "B, " +
-                             std::to_string(lines) + "L)\r\n";
+                    review_section = "\x1b[1;32m[SAFE]\x1b[0m\r\n";
                 }
 
                 std::string header =
-                    banner +
-                    "\x1b[2m---\x1b[0m\r\n" +
+                    "\r\n\x1b[2m--- [Pasted Content] (" +
+                    std::to_string(r.hold.size()) + "B, " +
+                    std::to_string(lines) + "L) ---\x1b[0m\r\n" +
                     shown +
-                    "\r\n\x1b[2m---\x1b[0m\r\n" +
+                    "\r\n\x1b[2m--- [Security Review] ---\x1b[0m\r\n" +
+                    review_section +
                     "\x1b[1mExecute? [Enter/^C] \x1b[0m";
 
                 if (!write_all(STDOUT_FILENO, header.data(), header.size()))

