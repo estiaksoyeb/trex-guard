@@ -280,6 +280,20 @@ Resolved severe input processing lag (`██▌ processing input...`) in `ble.s
   - Automatically appends POSIX line acceptance (`\n`) for approved prompts and pastes with trailing newlines, ensuring immediate command execution across both `ble.sh` and GNU Readline (`bash --norc`).
 - **Verification**: End-to-end PTY integration tests verified that both single-line and multi-line pastes execute immediately in `ble.sh` and `bash --norc` with `processing input` eliminated.
 
+### UI & Scanner: Bottom-Positioned Review Section & Multi-Finding Reporting (2026-10-09)
+
+Redesigned the approval UI layout and upgraded the scanner to report all findings:
+
+- **Problem (User Handwritten Feedback)**:
+  1. *Scroll-off on large pastes*: The review banner was displayed *above* the paste block. When pasting long multi-line scripts (30–50+ lines), the flags scrolled far off the top of the terminal, forcing the user to scroll up to understand why execution was blocked.
+  2. *Single-match blindness*: The scanner stopped at the first match. If a paste contained several dangerous commands (e.g. `rm -rf`, `rm file`, `curl | bash`), only one was shown in the banner.
+- **Solution**:
+  1. *Layout Reordering*: Reordered the terminal display so the `[Pasted Content]` preview prints first, followed by `--- [Security Review] ---` directly above the `Execute? [Enter/^C]` prompt. Security flags are always immediately visible on screen right where the decision is made without scrolling.
+  2. *Multi-Finding Scanner*: `classify()` now iterates across all literal, regex, and custom rules using `std::sregex_iterator` to collect all matched threats into `m.matches`, ranked by severity (`Danger` before `Review`) and deduplicated.
+  3. *Comprehensive Findings List*: When multiple threats exist, the review section enumerates every finding with its rule name, matched command snippet, and risk explanation.
+- **Verification**: Added unit tests for multi-match detection, severity ranking, and deduplication (70/70 tests pass). Verified in end-to-end PTY sessions.
+
+
 
 
 
