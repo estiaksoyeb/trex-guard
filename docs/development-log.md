@@ -293,6 +293,18 @@ Redesigned the approval UI layout and upgraded the scanner to report all finding
   3. *Comprehensive Findings List*: When multiple threats exist, the review section enumerates every finding with its rule name, matched command snippet, and risk explanation.
 - **Verification**: Added unit tests for multi-match detection, severity ranking, and deduplication (70/70 tests pass). Verified in end-to-end PTY sessions.
 
+### UI Polish: Configurable Compact Review Mode (`compact_review`) (2026-10-09)
+
+Added support for suppressing verbose multi-line risk explanations:
+
+- **Motivation**: Users frequently want the prompt gating protection and the rule name tag, but find the explanatory text (`Risk: Permanently deletes files...`) redundant on everyday operations.
+- **Implementation**:
+  - Added `show_risk_explanation = true` (default) to `Config`.
+  - Parsed `compact_review = true` (or `show_risk_explanation = false`) in `[general]` section of `config.ini`.
+  - In `src/main.cpp`, each finding conditionally renders on a clean single line when `compact_review` is enabled.
+- **Verification**: Added unit test assertions in `tests/test_rules.cpp` (72/72 tests pass). Verified in simulated PTY that `compact_review = true` outputs a single line per finding without risk explanations.
+
+
 
 
 

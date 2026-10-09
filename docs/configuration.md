@@ -31,6 +31,12 @@ If no configuration file is present, TREX Guard uses safe defaults (`auto_approv
 # - true (default): Harmless commands pass through to the shell with zero friction.
 # - false: EVERY paste requires you to press Enter to approve.
 auto_approve_safe = true
+
+# compact_review: Hides the multi-line "Risk: ..." explanation text under each finding,
+# leaving a clean, compact single-line list of flagged commands.
+# - false (default): Displays full multi-line risk explanation under each item.
+# - true: Shows only the flagged rule and command snippet without risk explanation lines.
+compact_review = true
 ```
 
 ---
