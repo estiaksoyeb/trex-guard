@@ -80,6 +80,35 @@ int main() {
         {"bash -c \"make build\"", trex::Risk::Review, "subshell execution"},
         {"sudo sh -c \"echo 1\"", trex::Risk::Review, "subshell execution"},
 
+        // Semantic pattern recognition: Git reset variations
+        {"git reset HEAD~1 --hard", trex::Risk::Review, "git hard reset"},
+        {"git -C repo reset --hard", trex::Risk::Review, "git hard reset"},
+        {"git --no-pager reset -q --hard", trex::Risk::Review, "git hard reset"},
+        {"git reset -q --hard HEAD", trex::Risk::Review, "git hard reset"},
+        {"sudo git reset --hard HEAD", trex::Risk::Review, "git hard reset"},
+        {"/usr/bin/git reset --hard", trex::Risk::Review, "git hard reset"},
+        {"git reset --soft HEAD~1", trex::Risk::Safe, ""},
+        {"git reset --mixed HEAD", trex::Risk::Safe, ""},
+        {"git reset --harder", trex::Risk::Safe, ""},
+
+        // Semantic pattern recognition: Git push variations
+        {"git -C repo push -f", trex::Risk::Review, "git force push"},
+        {"git push origin main --force", trex::Risk::Review, "git force push"},
+        {"sudo git push --force-with-lease origin main", trex::Risk::Review, "git force push"},
+
+        // Semantic pattern recognition: Git clean variations
+        {"git -C repo clean -fdx", trex::Risk::Review, "git clean"},
+
+        // Semantic pattern recognition: rm argument orders & wrappers
+        {"rm /tmp/data -r -f", trex::Risk::Danger, "rm -rf"},
+        {"rm -v -f -r /tmp/dir", trex::Risk::Danger, "rm -rf"},
+        {"rm /tmp/cache -rf", trex::Risk::Danger, "rm -rf"},
+        {"sudo rm -rf /var/cache", trex::Risk::Danger, "rm -rf"},
+        {"/bin/rm -rf /var/cache", trex::Risk::Danger, "rm -rf"},
+
+        // Semantic pattern recognition: chmod variations
+        {"sudo chmod -R 777 /opt", trex::Risk::Danger, "chmod"},
+
         // Mixed: Danger takes precedence over Review
         {"git clean -fd\nrm -rf /var/log", trex::Risk::Danger, "rm -rf"},
     };

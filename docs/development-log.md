@@ -304,6 +304,25 @@ Added support for suppressing verbose multi-line risk explanations:
   - In `src/main.cpp`, each finding conditionally renders on a clean single line when `compact_review` is enabled.
 - **Verification**: Added unit test assertions in `tests/test_rules.cpp` (72/72 tests pass). Verified in simulated PTY that `compact_review = true` outputs a single line per finding without risk explanations.
 
+### Scanner Evolution: Semantic Command Pattern Recognition (2026-10-09)
+
+Replaced brittle, monolithic regular expressions with a structured shell AST parser and semantic pattern recognition engine:
+
+- **Problem**:
+  1. *Combinatorial Regex Explosion*: Commands like `git reset --hard` were missed when arguments were reordered (e.g. `git reset HEAD~1 --hard`), when global flags were used (`git -C repo reset --hard`, `git --no-pager reset --hard`), or when commands were wrapped (`sudo git reset --hard`).
+  2. *Split Flags & Option Positioning*: Commands like `rm /path -r -f` or `rm -v -f -r` required complex, brittle regex permutations that still leaked unhandled patterns.
+- **Solution**:
+  1. *Zero-Dependency Shell Parser (`src/shell_parser.h`, `src/shell_parser.cpp`)*:
+     - Tokenizes commands with proper quote handling (`'...'`, `"..."`), escape sequences, statement separators (`;`, `&&`, `||`, `&`, newlines), and pipeline tracking (`|`).
+     - Normalizes executables across path prefixes (`/usr/bin/git` -> `git`) and unwraps wrappers (`sudo`, `doas`, `env`, `nice`, `nohup`).
+  2. *Semantic Command Analyzers (`src/rules.cpp`)*:
+     - **Git Engine**: Skips global flags, identifies Git subcommands (`reset`, `push`, `clean`, `checkout`, `restore`), and detects destructive arguments regardless of flag order or target commit position.
+     - **File Deletion Engine**: Inspects argument flags on `rm` for recursive and force combinations across any argument position, correctly identifying `rm -rf` vs single-file deletion.
+     - **Pipeline Correlation**: Correlates upstream download utilities (`curl`, `wget`) directly with downstream shell interpreters (`bash`, `sh`, `zsh`).
+     - **Chmod Engine**: Semantically detects recursive flags combined with destructive permissions masks or root paths.
+- **Verification**: Added extensive unit tests covering Git reset permutations, global flags, argument reordering, split `rm` flags, and wrapper prefixes (90/90 tests pass).
+
+
 
 
 

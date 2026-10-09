@@ -11,6 +11,7 @@ include(GNUInstallDirs)
 add_executable(trex-guard
     src/main.cpp
     src/rules.cpp
+    src/shell_parser.cpp
     src/config.cpp
 )
 
@@ -21,6 +22,7 @@ enable_testing()
 add_executable(test_rules
     tests/test_rules.cpp
     src/rules.cpp
+    src/shell_parser.cpp
     src/config.cpp
 )
 
