@@ -20,7 +20,7 @@ TREX Guard solves this with a **zero-overhead, transparent terminal firewall**:
 * **Zero Typing Latency**: Keystrokes, tab-completion, cursor navigation, and interactive CLI programs pass through at native speed with 0ms latency.
 * **Frictionless Safe Pastes**: Safe commands (`git status`, directory navigation, code snippets) execute immediately without prompts when `auto_approve_safe = true`.
 * **Semantic Threat Recognition**: Detects destructive operations regardless of flag permutations, argument order, path placements, or wrappers (`sudo`, `env`).
-* **Ergonomic Review Layout**: The paste preview is printed first, followed by clear severity tags (`HIGH RISK` vs `REVIEW`) right at the decision prompt—no scrolling required on large scripts.
+* **Ergonomic Review Layout**: The paste preview is printed first, followed by clear severity tags (`HIGH RISK` vs `REVIEW`) right at the decision prompt without scrolling on large scripts.
 * **Mobile & Terminal Resilient**: Handles terminal window resizes and mobile touch/keyboard focus transitions without cancelling review prompts.
 
 ---
@@ -70,7 +70,7 @@ Execute? [Enter/^C]
 
 ## 🚀 Quick Start
 
-### 1-Line Install (Recommended — No Compiler Required)
+### 1-Line Install (Recommended - No Compiler Required)
 
 Install prebuilt static binaries for your system (`x86_64` or `aarch64` / ARM64):
 
@@ -147,10 +147,10 @@ npm publish   | review | \bnpm\s+publish\b   | Publishes package to public regis
 
 ## 📚 Documentation
 
-* [Configuration Guide](docs/configuration.md) — Custom rules, allowlists, and configuration syntax
-* [Installation & Shell Integration](docs/install.md) — Shell hooks, packaging, and setup options
-* [Architecture & Design](docs/architecture.md) — PTY interception model and security boundaries
-* [Changelog & Development Log](docs/development-log.md) — Detailed feature progression and version history
+* [Configuration Guide](docs/configuration.md): Custom rules, allowlists, and configuration syntax
+* [Installation & Shell Integration](docs/install.md): Shell hooks, packaging, and setup options
+* [Architecture & Design](docs/architecture.md): PTY interception model and security boundaries
+* [Changelog & Development Log](docs/development-log.md): Detailed feature progression and version history
 
 ---
 
