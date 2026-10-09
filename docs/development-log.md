@@ -334,6 +334,15 @@ Fixed paste leakage occurring when pasting outside an idle Readline prompt or in
   2. *Unbracketed Multi-Line & Burst Detection*: Stdin reader detects unbracketed input containing newlines (`\n` or `\r` with size > 1) or large bursts (`size >= 8`), drains the burst using a 15ms `select` timeout, and routes the accumulated payload directly into `classify()` and the security review prompt.
 - **Verification**: Verified via automated PTY tests that unbracketed multi-line pastes containing `git reset HEAD~1 --hard` trigger the Security Review prompt, while normal single-character typing continues without delay.
 
+### Parser Hardening: Terminal Paste Carriage Return (`\r`) in Comment Lines (2026-10-09)
+
+Fixed scanner bypass where scripts starting with `#` comments caused subsequent commands to be ignored:
+
+- **Root Cause**: Terminal pastes in raw PTY mode deliver line breaks as carriage returns (`\r`) or CRLF (`\r\n`). In `src/shell_parser.cpp`, the `in_comment` state transition checked only for `\n`. When a comment ended in `\r`, `in_comment` remained true for all subsequent lines in the paste buffer, consuming destructive commands (`rm -rf`, `curl | bash`, `git push --force`) as comment text. The paste was classified as `Safe` and auto-approved without warning.
+- **Solution**: Updated comment line termination in `src/shell_parser.cpp` to reset `in_comment` and end the pipeline on either `\n` or `\r`.
+- **Verification**: Added unit tests in `tests/test_rules.cpp` (93/93 tests pass) and automated PTY tests verifying that scripts starting with comments and separated by `\r` trigger the Security Review prompt.
+
+
 
 
 

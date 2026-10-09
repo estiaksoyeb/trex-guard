@@ -212,7 +212,7 @@ std::vector<Pipeline> parse_shell_commands(const std::string& paste) {
 
         if (in_comment) {
             current_pipeline_snippet += c;
-            if (c == '\n') {
+            if (c == '\n' || c == '\r') {
                 in_comment = false;
                 finish_pipeline();
             }

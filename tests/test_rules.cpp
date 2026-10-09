@@ -109,6 +109,10 @@ int main() {
         // Semantic pattern recognition: chmod variations
         {"sudo chmod -R 777 /opt", trex::Risk::Danger, "chmod"},
 
+        // Comment with carriage return (\r / terminal paste) followed by dangerous commands
+        {"# comment\rrm -rf /tmp/cache\r", trex::Risk::Danger, "rm -rf"},
+        {"# comment\r\ngit reset --hard HEAD\r\n", trex::Risk::Review, "git hard reset"},
+
         // Mixed: Danger takes precedence over Review
         {"git clean -fd\nrm -rf /var/log", trex::Risk::Danger, "rm -rf"},
     };
