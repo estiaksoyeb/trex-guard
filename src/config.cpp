@@ -77,6 +77,10 @@ Config parse_config_string(const std::string& content) {
                 std::string val = to_lower(trim(line.substr(pos + 1)));
                 if (key == "auto_approve_safe") {
                     cfg.auto_approve_safe = (val == "true" || val == "1" || val == "yes");
+                } else if (key == "show_risk_explanation") {
+                    cfg.show_risk_explanation = (val == "true" || val == "1" || val == "yes");
+                } else if (key == "compact_review" || key == "compact") {
+                    cfg.show_risk_explanation = !(val == "true" || val == "1" || val == "yes");
                 }
             }
         } else if (current_section == "allowlist") {
