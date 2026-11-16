@@ -10,10 +10,17 @@
 //! function that executes is [`execute::run_block`], and the only caller below
 //! the gate is the branch that has a `GateResult::Pass`.
 //!
-//! # Slice status
+//! # `dry` never executes
 //!
-//! Slice 2 stops at `stage`: the verdict is computed and logged, and `dry`
-//! never executes. Slices 3-5 fill `gate` and `execute`.
+//! `dry` logs a passing block as a hold and stops. It is the default, so a
+//! fresh install cannot run anything by accident. `confirm` waits for a human
+//! (slice 5); `auto` runs a pass.
+//!
+//! # `hold_rules` can only make things stricter
+//!
+//! A pass whose reported rule or watch names include one from `hold_rules`
+//! becomes a hold. There is no config key anywhere that turns a hold or a
+//! block back into a run.
 
 use std::time::{Duration, Instant};
 
@@ -24,15 +31,27 @@ use crate::log::{Entry, Log, Verdict};
 /// What the gate said. Only these three exist: anything else is a block.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GateResult {
-    /// Nothing matched: safe. `reason` still carries any watch names, so the
-    /// `hold_rules` mapping can see them.
-    Pass { reason: String },
+    /// Nothing matched: safe. `reason` still carries any watch names, and
+    /// `names` is every rule and watch the gate reported, so the `hold_rules`
+    /// mapping can see them.
+    Pass {
+        reason: String,
+        names: Vec<String>,
+    },
     /// At least one danger rule matched. Can never be approved.
     Block { reason: String },
     /// Passed, but needs a human. `reason` names the rule(s).
     Hold { reason: String },
     /// The gate failed, timed out, or answered something unrecognised.
     Error { reason: String },
+}
+
+/// The names a gate answer reported, for `hold_rules` matching.
+fn gate_names(gate: &GateResult) -> Vec<String> {
+    match gate {
+        GateResult::Pass { names, .. } => names.clone(),
+        _ => Vec::new(),
+    }
 }
 
 /// Debug rendering of one clipboard pass, for `tgw once` and the log.
@@ -42,6 +61,7 @@ pub struct Outcome {
     pub reason: String,
     pub id: String,
     pub hash: u64,
+    pub duration_ms: u64,
     pub staged: Option<clip::Staged>,
 }
 
@@ -96,6 +116,7 @@ pub fn process_once(ctx: &mut Context<'_>) -> Outcome {
             reason: entry.reason,
             id: String::new(),
             hash,
+            duration_ms: started.elapsed().as_millis() as u64,
             staged: None,
         };
     }
@@ -113,6 +134,7 @@ pub fn process_once(ctx: &mut Context<'_>) -> Outcome {
                 reason: entry.reason,
                 id: String::new(),
                 hash,
+                duration_ms: started.elapsed().as_millis() as u64,
                 staged: None,
             };
         }
@@ -123,7 +145,7 @@ pub fn process_once(ctx: &mut Context<'_>) -> Outcome {
 
     // 6. Gate.
     let gate = crate::gate::check(ctx.cfg, &staged.path);
-    outcome_from_gate(ctx, gate, staged, started)
+    outcome_from_gate(ctx, gate, staged, started, &text)
 }
 
 fn ignore(ctx: &mut Context<'_>, reject: Reject, started: Instant) -> Outcome {
@@ -135,6 +157,7 @@ fn ignore(ctx: &mut Context<'_>, reject: Reject, started: Instant) -> Outcome {
         reason: entry.reason,
         id: String::new(),
         hash: 0,
+        duration_ms: started.elapsed().as_millis() as u64,
         staged: None,
     }
 }
@@ -149,8 +172,13 @@ fn outcome_from_gate(
     gate: GateResult,
     staged: clip::Staged,
     started: Instant,
+    text: &str,
 ) -> Outcome {
+    // `hold_rules` is applied *before* the mode, so a name match can only
+    // turn a pass into a hold. A block or a gate error never consults it.
+    let held_by = held_names(&gate, &ctx.cfg.hold_rules);
     let (verdict, exit) = match &gate {
+        GateResult::Pass { .. } if !held_by.is_empty() => (Verdict::Hold, Some(0)),
         GateResult::Pass { .. } => match ctx.cfg.mode {
             Mode::Dry => (Verdict::Hold, Some(0)), // logged as hold: it *would* run
             Mode::Confirm => (Verdict::Hold, Some(0)),
@@ -162,30 +190,104 @@ fn outcome_from_gate(
     };
 
     let reason = match &gate {
-        GateResult::Pass { reason } if reason.trim().is_empty() => "gate passed".to_string(),
-        GateResult::Pass { reason } => format!("gate passed: {reason}"),
+        GateResult::Pass { .. } if !held_by.is_empty() => {
+            format!("hold_rules matched: {}", held_by.join(", "))
+        }
+        GateResult::Pass { reason, .. } if reason.trim().is_empty() => "gate passed".to_string(),
+        GateResult::Pass { reason, .. } => format!("gate passed: {reason}"),
         GateResult::Hold { reason } => reason.clone(),
         GateResult::Block { reason } => reason.clone(),
         GateResult::Error { reason } => format!("gate error: {reason}"),
     };
 
-    let mut entry = Entry::new(verdict, reason.clone());
-    entry.id = staged.id.clone();
-    entry.hash = staged.hash;
-    entry.exit = exit;
-    entry.duration_ms = started.elapsed().as_millis() as u64;
-    let _ = ctx.log.append(&entry);
-    if verdict != Verdict::Ignore {
-        let _ = ctx.log.keep_block(&staged.id, &std::fs::read_to_string(&staged.path).unwrap_or_default());
-    }
+    // 7. Run, only for `Run`. This is the single call site of the executor.
+    let (verdict, reason, duration_ms) = if verdict == Verdict::Run {
+        let mut entry = Entry::new(verdict, reason.clone());
+        entry.id = staged.id.clone();
+        entry.hash = staged.hash;
+        entry.exit = exit;
+        entry.duration_ms = started.elapsed().as_millis() as u64;
+        let _ = ctx.log.append(&entry);
+
+        match crate::execute::run_block(ctx.cfg, &staged.path) {
+            Ok(run) => {
+                let mut ran = Entry::new(run_verdict(&run), run_reason(&run, text));
+                ran.id = staged.id.clone();
+                ran.hash = staged.hash;
+                ran.exit = run.exit;
+                ran.duration_ms = run.duration_ms;
+                let _ = ctx.log.append(&ran);
+                let d = started.elapsed().as_millis() as u64;
+                (run_verdict(&run), ran.reason, d)
+            }
+            Err(e) => {
+                let mut ran = Entry::new(Verdict::Block, e.reason());
+                ran.id = staged.id.clone();
+                ran.hash = staged.hash;
+                let _ = ctx.log.append(&ran);
+                (Verdict::Block, ran.reason, started.elapsed().as_millis() as u64)
+            }
+        }
+    } else {
+        let mut entry = Entry::new(verdict, reason.clone());
+        entry.id = staged.id.clone();
+        entry.hash = staged.hash;
+        entry.exit = exit;
+        entry.duration_ms = started.elapsed().as_millis() as u64;
+        let _ = ctx.log.append(&entry);
+        (verdict, reason, entry.duration_ms)
+    };
+
+    let _ = ctx.log.keep_block(&staged.id, text);
 
     Outcome {
         verdict,
         reason,
         id: staged.id.clone(),
         hash: staged.hash,
+        duration_ms,
         staged: Some(staged),
     }
+}
+
+/// Which configured `hold_rules` names the gate reported. Empty for anything
+/// that is not a pass: a block is already harsher than a hold.
+fn held_names(gate: &GateResult, hold_rules: &[String]) -> Vec<String> {
+    let names = gate_names(gate);
+    hold_rules
+        .iter()
+        .filter(|r| names.iter().any(|n| n == *r))
+        .cloned()
+        .collect()
+}
+
+/// The verdict after running: success is `Run`, anything else is a hold-worthy
+/// failure the human should see. A failed run is never silently `Run`.
+fn run_verdict(run: &crate::execute::RunResult) -> Verdict {
+    if run.success() {
+        Verdict::Run
+    } else {
+        Verdict::Hold
+    }
+}
+
+fn run_reason(run: &crate::execute::RunResult, text: &str) -> String {
+    let mut s = if run.timed_out {
+        "run timed out".to_string()
+    } else {
+        match run.exit {
+            Some(0) => "ran successfully".to_string(),
+            Some(c) => format!("exited {c}"),
+            None => "run was killed".to_string(),
+        }
+    };
+    if run.truncated {
+        s.push_str(" (output truncated)");
+    }
+    // The block's own output goes back to the clipboard, so the human reads
+    // the result where they will paste. Never written to a file by tgw.
+    let _ = text;
+    s
 }
 
 #[cfg(test)]
@@ -211,6 +313,7 @@ mod tests {
         for gate in [
             GateResult::Pass {
                 reason: String::new(),
+                names: Vec::new(),
             },
             GateResult::Hold { reason: "r".into() },
             GateResult::Block { reason: "r".into() },

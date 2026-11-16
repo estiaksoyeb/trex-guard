@@ -215,6 +215,7 @@ fn report_once(ctx: &mut Context<'_>) -> i32 {
         }
         v => {
             println!("{}: {}", v.as_str(), out.reason);
+            println!("id: {}  ({} ms)", out.id, out.duration_ms);
             if let Some(s) = &out.staged {
                 println!("staged: {}", s.path.display());
             }
@@ -308,13 +309,54 @@ fn cmd_doctor(rest: &[String]) -> i32 {
     1
 }
 
+/// `tgw cd PATH`: writes the directory `cwd_mode = file` will read.
+///
+/// Refuses when `TGW_IN_BLOCK` is set. That is an **accident guard, not a
+/// boundary**: a block can still write the file directly. It exists so a block
+/// that happens to say `tgw cd /` does not silently redirect every later block,
+/// and so the human finds out immediately instead of after the next run.
 fn cmd_cd(rest: &[String]) -> i32 {
     if rest.len() != 1 {
         return usage("cd", "cd needs exactly one PATH");
     }
-    if load_config().is_none() {
+    if std::env::var_os(tgw::execute::IN_BLOCK).is_some() {
+        eprintln!("tgw: cd refuses to run inside a block; a block cannot move later blocks");
         return 2;
     }
-    eprintln!("tgw: cd is not built yet (slice 4)");
-    1
+    let Some(cfg) = load_config() else {
+        return 2;
+    };
+    let path = std::path::Path::new(&rest[0]);
+    if !path.is_absolute() {
+        eprintln!(
+            "tgw: cd needs an absolute path, got `{}` (tgw has no shell to resolve it against)",
+            rest[0]
+        );
+        return 2;
+    }
+    if !path.is_dir() {
+        eprintln!("tgw: not a directory: {}", path.display());
+        return 2;
+    }
+    if cfg.cwd_mode != tgw::config::CwdMode::File {
+        eprintln!(
+            "tgw: cwd_mode is `{}`, so cwd_file is not read; set `cwd_mode = file` first",
+            cfg.cwd_mode.as_str()
+        );
+        return 2;
+    }
+    // Write into the state dir then rename: a reader never sees half a path.
+    let target = std::path::Path::new(&cfg.cwd_file);
+    let tmp = target.with_extension("tmp");
+    if let Err(e) = std::fs::write(&tmp, format!("{}\n", path.display())) {
+        eprintln!("tgw: cannot write {}: {e}", tmp.display());
+        return 1;
+    }
+    if let Err(e) = std::fs::rename(&tmp, target) {
+        let _ = std::fs::remove_file(&tmp);
+        eprintln!("tgw: cannot write {}: {e}", target.display());
+        return 1;
+    }
+    println!("cd: {}", path.display());
+    0
 }

@@ -93,6 +93,7 @@ pub fn verdict_for(code: Option<i32>, stderr: &str) -> GateResult {
     match code {
         Some(0) => GateResult::Pass {
             reason: report.reason(),
+            names: report.all_names(),
         },
         Some(1) => GateResult::Block {
             reason: non_empty(report.reason(), "gate reported danger"),
