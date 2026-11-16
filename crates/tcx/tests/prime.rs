@@ -20,6 +20,7 @@ fn note(date: &str, kind: Kind, text: &str) -> Note {
         text: text.into(),
         files: Vec::new(),
         keywords: Vec::new(),
+        dir: None,
     }
 }
 

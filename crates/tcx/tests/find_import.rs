@@ -46,6 +46,7 @@ fn note(date: &str, kind: Kind, text: &str, tags: &[&str]) -> Note {
         text: text.into(),
         files: Vec::new(),
         keywords: tags.iter().map(|s| s.to_string()).collect(),
+        dir: None,
     }
 }
 

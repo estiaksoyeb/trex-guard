@@ -1,5 +1,28 @@
 # Development Log
 
+## 2026-11-16 — `tcx map`
+
+Answers "where does everything live" without a file dump, split so neither half
+can invalidate the other:
+
+- the tree is **walked live from disk** at render time, so a moved file breaks
+  nothing;
+- the judgment is **notes with a `dir:` field**, written by the AI as it learns,
+  and dated.
+
+`--depth N` (default 2) and `--under PATH` control the output. Data-only
+directories (schema dumps, migrations) collapse to `(N data files)`, generated
+and vendored trees are skipped, and judgment on a directory that no longer
+exists is printed under `## no longer in the tree` rather than dropped.
+
+`--under` initially failed for deep paths, because depth was measured from the
+root and the subtree was looked for inside an already-shallow tree. Depth now
+counts from the node being mapped.
+
+While building it, `tcx note "text" .` was found to store the `.` as note text:
+`note` is the only command with no positional PATH. A trailing `.`, `..` or
+existing path is now rejected with exit 2.
+
 ## 2026-11-16 — dropped `tcx-trial`
 
 The tally helper for the rejected 5-session trial is gone: `scripts/tcx-trial`,

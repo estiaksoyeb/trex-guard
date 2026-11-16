@@ -111,6 +111,24 @@ pub const COMMANDS: &[Command] = &[
         ],
     },
     Command {
+        name: "map",
+        summary: "Shallow tree of the repo, annotated with directory notes",
+        usage: &["map [--depth N] [--under PATH] [PATH]"],
+        options: &[
+            "-d, --depth N     Directory levels to show (default: 2)",
+            "-u, --under PATH  Only this subtree, e.g. app/src",
+            "--path, -p PATH   Project to resolve (default: .)",
+        ],
+        notes: &[
+            "The tree is walked live from disk, so it cannot go stale. The",
+            "judgment on it comes from notes written with `note --dir PATH`.",
+            "Directories that hold only generated or vendored files are skipped,",
+            "as are hidden files.",
+            "Notes attached to a directory that no longer exists are listed at the",
+            "end under `no longer in the tree`, never silently dropped.",
+        ],
+    },
+    Command {
         name: "resume",
         summary: "As fresh, plus what previous sessions learned",
         usage: &["resume [--budget BYTES] [--template FILE] [PATH]"],

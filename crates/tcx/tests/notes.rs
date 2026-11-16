@@ -26,6 +26,7 @@ fn note(text: &str) -> Note {
         text: text.into(),
         files: Vec::new(),
         keywords: Vec::new(),
+        dir: None,
     }
 }
 

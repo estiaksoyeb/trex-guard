@@ -155,6 +155,7 @@ fn parse_line(line: &str, source: Source) -> Note {
                 text: rest.trim().to_owned(),
                 files: Vec::new(),
                 keywords: Vec::new(),
+                dir: None,
             };
         }
     }

@@ -251,7 +251,7 @@ or lookaround. So the hazard is user-rules-only, not built-ins.
 | `tcx import` | **done** | Import an existing `.ai/` directory |
 | `tcx fresh` | **done** | Prompt with `## Project` filled from this repo |
 | `tcx resume` | **done** | `fresh` plus what previous sessions learned |
-| `tcx map` | deferred | Project map |
+| `tcx map` | **done** | Generated tree + AI judgment on directories |
 | `tcx mcp` | deferred | MCP server, behind a cargo feature |
 
 `ctx` was renamed to `find` because `tcx ctx` stutters.
@@ -267,6 +267,7 @@ tcx find [-k KEYWORD]... [--tags] [QUERY...] [PATH]
 tcx import [--dir DIR] [PATH]
 tcx fresh [--template FILE] [PATH]
 tcx resume [--budget BYTES] [PATH]
+tcx map [--depth N] [--under PATH] [PATH]
 ```
 
 `tg fresh` and `tg resume` are the user-facing spellings; `tg` passes them
@@ -455,6 +456,61 @@ commands disagreeing about what matters most.
   `Path::join(":app")` silently produces an absolute path that ignores the
   repository root. This was a real bug caught by testing against `mpvRex`.
 
+## 11b. `map`: generated structure, stored judgment
+
+`tcx map` answers "where does everything live" without a file dump. The split
+is deliberate, because rule 18 of the workflow prompt forbids persisting what
+`rg` can rebuild:
+
+| Part | Source | Stale? |
+| --- | --- | --- |
+| directories and files | walked live from disk | never |
+| one-line judgment per directory | notes with `dir:` | yes, but dated |
+
+Nothing about the tree is stored. The AI adds judgment as it learns:
+
+```bash
+tcx note -k gotcha -d app/src/.../miniplayer "NOT the full player; Open full player hands off to PlayerActivity"
+tcx map --depth 2
+tcx map --under app/src/.../ui/browser --depth 1
+```
+
+Output shape:
+
+```text
+# map
+depth 1 tcx
+
+  miniplayer/  - NOT the full player; Open full player hands off to PlayerActivity
+      2026-11-16: morphing sheet; state in MiniPlayerStateManager
+  networkstreaming/
+```
+
+### Rules
+
+- `--depth` counts directory levels from the node being mapped (default 2).
+- `--under PATH` maps one subtree and the depth counts from *there*. A deep
+  path is therefore reachable without a huge `--depth`; an earlier version
+  capped `--under` by its distance from the root, which made deep paths
+  unmappable.
+- Skipped: generated and vendored trees (`target`, `node_modules`, `build`,
+  `tmp`, ...), RCS/CVS backup directories, and hidden entries except
+  `.github`/`.gitlab-ci.yml`/`.tg`.
+- A directory containing only data files (schemas, migrations) and more than 8
+  entries collapses to `(N data files)`: listing 40 JSON files teaches nothing
+  about where code lives.
+- Judgment on a directory that no longer exists is printed at the end under
+  `## no longer in the tree`. It is the only thing here that cannot be
+  regenerated, so it is never silently dropped.
+- Output is deterministic for a given tree and note set, so it is testable.
+
+### Bug found while building it
+
+`tcx note "text" .` silently stored the `.` as part of the note text: `note`
+has no positional `PATH`, unlike every other command, so the habit of passing
+one corrupts the note. A trailing argument that is `.`, `..`, or an existing
+path is now rejected with exit 2 and a hint to use `--path`.
+
 ## 12. Rust architecture
 
 Single Cargo workspace at the repo root (`Cargo.toml`), members under
@@ -485,7 +541,7 @@ team sync, "other guards on the PTY layer", renaming `tg`, seam patterns,
 
 ## 14. Test status
 
-**127 tests passing** across eight test files plus unit tests:
+**143 tests passing** across eight test files plus unit tests:
 
 | File | Tests | Covers |
 | --- | --- | --- |
@@ -497,6 +553,7 @@ team sync, "other guards on the PTY layer", renaming `tg`, seam patterns,
 | `tests/prime.rs` | 16 | stamp, golden output, ordering, budget, CSI |
 | `tests/cli.rs` | 7 | `id` output shape, exit codes, adoption, `find -k` |
 | `tests/help.rs` | 7 | help coverage, drift detection, wrapper delegation |
+| `tests/map.rs` | 13 | tree, depth, `--under`, judgment, collapse, orphans |
 | `tests/note_prime.rs` | 12 | `note`/`prime` end to end, worktrees, determinism |
 | `tests/find_import.rs` | 18 | `find`, keyword scoping, `import`, dedupe, source immutability |
 | `tests/wrapper.rs` | 3 | launcher resolution, no self-recursion |
@@ -527,7 +584,7 @@ team sync, "other guards on the PTY layer", renaming `tg`, seam patterns,
 Plus CLI tests: opaque-id-first output, stable human labels, adoption preserves
 notes, exit codes, version, no-`HOME` error.
 
-Current status: **127 tests passing** (5 project + 3 briefing + 13 fresh + 19
+Current status: **143 tests passing** (5 project + 3 briefing + 13 fresh + 19
 identity + 19 notes + 16 prime + 6 CLI + 12 note/prime CLI + 17 find/import +
 3 wrapper).
 

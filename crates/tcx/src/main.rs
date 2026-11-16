@@ -4,7 +4,7 @@
 //! without spawning a process.
 
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use tcx::notes::{Kind, Note, Notes};
@@ -45,6 +45,7 @@ fn main() -> ExitCode {
         "import" => run_import(&args[1..]),
         "fresh" => run_fresh(&args[1..]),
         "resume" => run_resume(&args[1..]),
+        "map" => run_map(&args[1..]),
         other => {
             eprintln!("tcx: unknown command `{other}`");
             eprintln!("run `tcx --help` for usage");
@@ -204,6 +205,7 @@ fn run_note(args: &[String]) -> ExitCode {
     let mut kind = Kind::Decision;
     let mut files: Vec<String> = Vec::new();
     let mut keywords: Vec<String> = Vec::new();
+    let mut dir: Option<String> = None;
     let mut text_parts: Vec<String> = Vec::new();
     let mut only_notes = false;
 
@@ -231,6 +233,13 @@ fn run_note(args: &[String]) -> ExitCode {
                     return ExitCode::from(EXIT_USAGE);
                 }
             },
+            "--dir" | "-d" => match iter.next() {
+                Some(d) => dir = Some(d.clone()),
+                None => {
+                    eprintln!("tcx note: --dir needs a value");
+                    return ExitCode::from(EXIT_USAGE);
+                }
+            },
             "--path" | "-p" => match iter.next() {
                 Some(p) => path = p.clone(),
                 None => {
@@ -247,6 +256,22 @@ fn run_note(args: &[String]) -> ExitCode {
                 return ExitCode::from(EXIT_USAGE);
             }
             other => text_parts.push(other.to_string()),
+        }
+    }
+
+    // A trailing `.` or a path is almost always a slipped positional argument
+    // from the habits the other commands teach. `note` has no positional PATH,
+    // so it would quietly become part of the note text. Catch it instead.
+    if let Some(last) = text_parts.last() {
+        // Only flag what actually resolves: a note may legitimately mention
+        // `foo/bar`. `.` and `..` are flagged regardless because they are
+        // never prose.
+        let looks_like_path = matches!(last.as_str(), "." | "..")
+            || (last.contains('/') && Path::new(last).exists());
+        if looks_like_path {
+            eprintln!("tcx note: `{last}` looks like a path, but note takes no positional path");
+            eprintln!("tcx note: use --path {last} to choose the project");
+            return ExitCode::from(EXIT_USAGE);
         }
     }
 
@@ -283,7 +308,10 @@ fn run_note(args: &[String]) -> ExitCode {
         return ExitCode::from(EXIT_USAGE);
     }
 
-    let note = Note::new(kind, text).with_files(files).with_keywords(keywords);
+    let mut note = Note::new(kind, text).with_files(files).with_keywords(keywords);
+    if let Some(dir) = dir {
+        note = note.with_dir(dir);
+    }
     match notes.append(&note) {
         Ok(()) => {
             println!("{}", note.render());
@@ -500,6 +528,64 @@ fn run_import(args: &[String]) -> ExitCode {
             ExitCode::from(EXIT_ERROR)
         }
     }
+}
+
+fn run_map(args: &[String]) -> ExitCode {
+    let mut path = ".".to_string();
+    let mut opts = tcx::map::Options::default();
+
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--depth" | "-d" => match iter.next().and_then(|d| d.parse::<usize>().ok()) {
+                Some(n) if n > 0 => opts.depth = n,
+                _ => {
+                    eprintln!("tcx map: --depth must be a positive number");
+                    return ExitCode::from(EXIT_USAGE);
+                }
+            },
+            "--under" | "-u" => match iter.next() {
+                Some(u) => opts.under = Some(u.clone()),
+                None => {
+                    eprintln!("tcx map: --under needs a value");
+                    return ExitCode::from(EXIT_USAGE);
+                }
+            },
+            "--path" | "-p" => match iter.next() {
+                Some(p) => path = p.clone(),
+                None => {
+                    eprintln!("tcx map: --path needs a value");
+                    return ExitCode::from(EXIT_USAGE);
+                }
+            },
+            other if other.starts_with('-') => {
+                eprintln!("tcx map: unknown option `{other}`");
+                return ExitCode::from(EXIT_USAGE);
+            }
+            other => path = other.to_string(),
+        }
+    }
+
+    let project = match Project::resolve(&path) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("tcx map: {e}");
+            return ExitCode::from(EXIT_ERROR);
+        }
+    };
+    project.print_adoption();
+
+    let notes = match project.notes().read_all() {
+        Ok(n) => n,
+        Err(e) => {
+            eprintln!("tcx map: {e}");
+            return ExitCode::from(EXIT_ERROR);
+        }
+    };
+
+    let text = tcx::map::render(&project.identity.root, &notes, &opts);
+    print!("{text}");
+    ExitCode::from(EXIT_OK)
 }
 
 fn run_fresh(args: &[String]) -> ExitCode {

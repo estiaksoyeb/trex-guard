@@ -10,6 +10,7 @@ pub mod briefing;
 pub mod find;
 pub mod help;
 pub mod id;
+pub mod map;
 pub mod import;
 pub mod notes;
 pub mod prime;

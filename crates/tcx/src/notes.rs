@@ -10,11 +10,14 @@
 //! copy rather than a conversion:
 //!
 //! ```text
-//! <date> | <kind> | <text> | files: <names> | [keywords]
+//! <date> | <kind> | <text> | files: <names> | dir: <path> | [keywords]
 //! ```
 //!
-//! Only `date`, `kind` and `text` are required. `files` and `[keywords]` are
-//! omitted when empty, which keeps short notes short. `kind` is one of
+//! Only `date`, `kind` and `text` are required. `files`, `dir` and `[keywords]`
+//! are omitted when empty, which keeps short notes short.
+//!
+//! `dir` is what makes `tcx map` possible: a note attached to a directory is
+//! rendered inside the generated tree rather than as a flat line. `kind` is one of
 //! `decision`, `gotcha` or `open`; unknown values are preserved verbatim so a
 //! newer `tcx` writing a new kind is not mistaken for corruption.
 //!
@@ -80,6 +83,11 @@ pub struct Note {
     pub files: Vec<String>,
     /// Free-form tags used by scoped search.
     pub keywords: Vec<String>,
+    /// Directory this note describes, relative to the project root.
+    ///
+    /// Used by `tcx map` to attach judgment to a point in the tree. A note
+    /// without `dir` is an ordinary note.
+    pub dir: Option<String>,
 }
 
 impl Note {
@@ -91,7 +99,14 @@ impl Note {
             text: text.into(),
             files: Vec::new(),
             keywords: Vec::new(),
+            dir: None,
         }
+    }
+
+    /// Attaches this note to a directory, for `tcx map`.
+    pub fn with_dir(mut self, dir: impl Into<String>) -> Self {
+        self.dir = Some(dir.into());
+        self
     }
 
     pub fn with_files(mut self, files: Vec<String>) -> Self {
@@ -121,6 +136,13 @@ impl Note {
             out.push_str(" | files: ");
             out.push_str(&self.files.join(", "));
         }
+        if let Some(dir) = &self.dir {
+            let dir = sanitize(dir);
+            if !dir.is_empty() {
+                out.push_str(" | dir: ");
+                out.push_str(&dir);
+            }
+        }
         if !self.keywords.is_empty() {
             out.push_str(" | [");
             out.push_str(&self.keywords.join(", "));
@@ -146,10 +168,16 @@ impl Note {
 
         let mut files = Vec::new();
         let mut keywords = Vec::new();
+        let mut dir = None;
         for extra in parts {
             let extra = extra.trim();
             if let Some(list) = extra.strip_prefix("files:") {
                 files = split_list(list);
+            } else if let Some(path) = extra.strip_prefix("dir:") {
+                let path = path.trim();
+                if !path.is_empty() {
+                    dir = Some(path.to_owned());
+                }
             } else if extra.starts_with('[') && extra.ends_with(']') {
                 keywords = split_list(&extra[1..extra.len() - 1]);
             }
@@ -161,6 +189,7 @@ impl Note {
             text: text.to_owned(),
             files,
             keywords,
+            dir,
         })
     }
 }
