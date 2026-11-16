@@ -247,7 +247,7 @@ or lookaround. So the hazard is user-rules-only, not built-ins.
 | `tcx id` | **done** | Resolve identity + store path |
 | `tcx note` | **done** | Append / list dated notes |
 | `tcx prime` | **done** | Budgeted, paste-ready session briefing |
-| `tcx find` | **done** | Search notes / list keywords (notes only) |
+| `tcx find` | **done** | Search notes; `-k` scopes by keyword, `--tags` lists them |
 | `tcx import` | **done** | Import an existing `.ai/` directory |
 | `tcx fresh` | **done** | Prompt with `## Project` filled from this repo |
 | `tcx resume` | **done** | `fresh` plus what previous sessions learned |
@@ -263,7 +263,7 @@ tcx id [--human] [PATH]
 tcx note [-k KIND] [-f FILE]... [-t TAG]... TEXT
 tcx note --list [PATH]
 tcx prime [--budget BYTES] [PATH]
-tcx find [--tags] [QUERY...] [PATH]
+tcx find [-k KEYWORD]... [--tags] [QUERY...] [PATH]
 tcx import [--dir DIR] [PATH]
 tcx fresh [--template FILE] [PATH]
 tcx resume [--budget BYTES] [PATH]
@@ -480,7 +480,7 @@ team sync, "other guards on the PTY layer", renaming `tg`, seam patterns,
 
 ## 14. Test status
 
-**114 tests passing** across eight test files plus unit tests:
+**116 tests passing** across eight test files plus unit tests:
 
 | File | Tests | Covers |
 | --- | --- | --- |
@@ -490,9 +490,9 @@ team sync, "other guards on the PTY layer", renaming `tg`, seam patterns,
 | `tests/id.rs` | 19 | every identity case in the matrix below |
 | `tests/notes.rs` | 19 | render, parse, sanitise, append, concurrency |
 | `tests/prime.rs` | 16 | stamp, golden output, ordering, budget, CSI |
-| `tests/cli.rs` | 6 | `id` output shape, exit codes, adoption |
+| `tests/cli.rs` | 7 | `id` output shape, exit codes, adoption, `find -k` |
 | `tests/note_prime.rs` | 12 | `note`/`prime` end to end, worktrees, determinism |
-| `tests/find_import.rs` | 17 | `find`, `import`, dedupe, source immutability |
+| `tests/find_import.rs` | 18 | `find`, keyword scoping, `import`, dedupe, source immutability |
 | `tests/wrapper.rs` | 3 | launcher resolution, no self-recursion |
 
 Not covered by `cargo test`: `scripts/tcx-trial`. It is a shell tally
@@ -524,7 +524,7 @@ helper, verified by hand (log, show, reset, and both validation errors).
 Plus CLI tests: opaque-id-first output, stable human labels, adoption preserves
 notes, exit codes, version, no-`HOME` error.
 
-Current status: **114 tests passing** (5 project + 3 briefing + 12 fresh + 19
+Current status: **116 tests passing** (5 project + 3 briefing + 13 fresh + 19
 identity + 19 notes + 16 prime + 6 CLI + 12 note/prime CLI + 17 find/import +
 3 wrapper).
 

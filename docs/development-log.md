@@ -1,5 +1,14 @@
 # Development Log
 
+## 2026-11-16 — `tcx find -k`
+
+Rule 18 of the workflow prompt instructs the AI to read notes with
+`tcx find -k <keyword>`, but `find` had no `-k` flag: every scoped lookup would
+have exited 2. The flag now filters by keyword (repeatable, case-insensitive)
+before the free-text query. This is the failure mode to watch for in general:
+the prompt is configuration, and configuration that names a command must be
+checked against the binary.
+
 ## 2026-11-16 — config-only prompt, no clipboard coupling
 
 Two corrections to the `fresh`/`resume` slice.

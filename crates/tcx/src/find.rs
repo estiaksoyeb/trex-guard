@@ -29,6 +29,26 @@ pub fn find<'a>(notes: &'a [Note], query: &str) -> Vec<Hit<'a>> {
         .collect()
 }
 
+/// Keeps only notes carrying one of `keywords` (case-insensitive).
+///
+/// An empty filter matches everything. This is the scoped read rule 18 of the
+/// workflow prompt mandates: the AI names a keyword and sees only those notes,
+/// never a whole dump.
+pub fn matching_keywords<'a>(notes: &'a [Note], keywords: &[String]) -> Vec<&'a Note> {
+    if keywords.is_empty() {
+        return notes.iter().collect();
+    }
+    let wanted: Vec<String> = keywords.iter().map(|k| k.trim().to_lowercase()).collect();
+    notes
+        .iter()
+        .filter(|n| {
+            n.keywords
+                .iter()
+                .any(|k| wanted.iter().any(|w| k.to_lowercase() == *w))
+        })
+        .collect()
+}
+
 /// Lists all distinct keywords across `notes`, most frequent first.
 ///
 /// Useful when the caller has no keyword in mind and needs a way in.

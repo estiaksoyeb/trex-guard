@@ -322,3 +322,30 @@ fn cli_import_errors_when_dir_absent() {
     let out = tcx(&home, &["import", "--path", repo.to_str().unwrap()]);
     assert_eq!(out.status.code(), Some(1));
 }
+
+#[test]
+fn find_scopes_by_keyword() {
+    use tcx::find::matching_keywords;
+    use tcx::notes::{Kind, Note};
+
+    let notes = vec![
+        Note::new(Kind::Gotcha, "identity is provisional when shallow")
+            .with_keywords(vec!["identity".to_owned()]),
+        Note::new(Kind::Decision, "notes live in XDG data")
+            .with_keywords(vec!["storage".to_owned()]),
+        Note::new(Kind::Open, "untagged"),
+    ];
+
+    let identity = vec!["identity".to_owned()];
+    let hits = matching_keywords(&notes, &identity);
+    assert_eq!(hits.len(), 1);
+    assert!(hits[0].text.contains("provisional"));
+
+    // Either keyword matches, case-insensitively.
+    let either = vec!["IDENTITY".to_owned(), "storage".to_owned()];
+    assert_eq!(matching_keywords(&notes, &either).len(), 2);
+
+    // No filter matches everything; a filter that matches nothing is empty.
+    assert_eq!(matching_keywords(&notes, &[]).len(), 3);
+    assert_eq!(matching_keywords(&notes, &["absent".to_owned()]).len(), 0);
+}

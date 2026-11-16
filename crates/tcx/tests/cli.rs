@@ -177,3 +177,35 @@ fn no_home_is_a_clear_error() {
     assert_eq!(out.status.code(), Some(1));
     assert!(stderr(&out).contains("TCX_HOME"), "got {}", stderr(&out));
 }
+
+/// Rule 18 of the workflow prompt tells the AI to run `tcx find -k <keyword>`.
+/// If that flag does not exist, every scoped lookup in a session fails.
+#[test]
+fn find_accepts_the_dash_k_keyword_filter() {
+    let home = std::env::temp_dir().join(format!("tcx-find-k-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&home);
+    let repo = home.join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+
+    let run = |args: &[&str]| {
+        std::process::Command::new(env!("CARGO_BIN_EXE_tcx"))
+            .args(args)
+            .current_dir(&repo)
+            .env("TCX_HOME", &home)
+            .output()
+            .unwrap()
+    };
+
+    let note = run(&["note", "-k", "gotcha", "-t", "identity", "shallow is provisional"]);
+    assert!(note.status.success());
+    let note = run(&["note", "-k", "decision", "-t", "storage", "notes in XDG"]);
+    assert!(note.status.success());
+
+    let out = run(&["find", "-k", "identity"]);
+    assert_eq!(out.status.code(), Some(0));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("shallow is provisional"), "{text}");
+    assert!(!text.contains("notes in XDG"), "{text}");
+
+    let _ = std::fs::remove_dir_all(&home);
+}

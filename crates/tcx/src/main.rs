@@ -361,12 +361,22 @@ fn run_prime(args: &[String]) -> ExitCode {
 fn run_find(args: &[String]) -> ExitCode {
     let mut path = ".".to_string();
     let mut list_tags = false;
+    let mut keywords: Vec<String> = Vec::new();
     let mut query_parts: Vec<String> = Vec::new();
 
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
         match arg.as_str() {
             "--tags" => list_tags = true,
+            // Repeatable, so `tcx find -k identity -k storage` narrows to
+            // either keyword.
+            "--kind" | "-k" => match iter.next() {
+                Some(k) => keywords.push(k.clone()),
+                None => {
+                    eprintln!("tcx find: --kind needs a value");
+                    return ExitCode::from(EXIT_USAGE);
+                }
+            },
             "--path" | "-p" => match iter.next() {
                 Some(p) => path = p.clone(),
                 None => {
@@ -407,10 +417,13 @@ fn run_find(args: &[String]) -> ExitCode {
         return ExitCode::from(EXIT_OK);
     }
 
+    // Keyword filter first, then the free-text query on what survived.
+    let scoped = tcx::find::matching_keywords(&notes, &keywords);
     let query = query_parts.join(" ");
-    let hits = tcx::find::find(&notes, &query);
-    for hit in &hits {
-        println!("{}", hit.note.render());
+    for note in scoped {
+        if query.is_empty() || tcx::find::find(std::slice::from_ref(note), &query).len() == 1 {
+            println!("{}", note.render());
+        }
     }
     ExitCode::from(EXIT_OK)
 }
@@ -586,7 +599,7 @@ fn print_help() {
          tcx note [-k KIND] [-f FILE]... [-t TAG]... TEXT\n  \
          tcx note --list [PATH]\n  \
          tcx prime [--budget BYTES] [PATH]\n  \
-         tcx find [--tags] [QUERY...] [PATH]\n  \
+         tcx find [-k KEYWORD]... [--tags] [QUERY...] [PATH]\n  \
          tcx import [--dir DIR] [PATH]\n  \
          tcx fresh [--template FILE] [PATH]\n  \
          tcx resume [--budget BYTES] [PATH]\n  \
@@ -595,7 +608,7 @@ fn print_help() {
          id      Resolve the project identity and its store path\n  \
          note    Append a dated note (decision|gotcha|open)\n  \
          prime   Print a budgeted session briefing for pasting into a chat\n  \
-         find    Search this project's notes; --tags lists keywords\n  \
+         find    Search notes; -k scopes by keyword, --tags lists keywords\n  \
          import  Import an existing .ai/ directory (never modifies it)\n  \
          fresh   Print the prompt with ## Project filled in from this repo\n  \
          resume  As fresh, plus what previous sessions learned\n\n\
