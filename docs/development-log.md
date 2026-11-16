@@ -1,5 +1,38 @@
 # Development Log
 
+## 2026-11-16 — TREX ConteXt (`tcx`): what was built, and what was misunderstood
+
+### Built
+
+A separate Rust crate (`crates/tcx`) that stores a project's judgment notes
+outside the repository. `tg` is untouched. Commands: `id`, `note`, `prime`,
+`find`, `import`. 92 tests.
+
+### The misunderstanding that cost the most
+
+`tcx note` was designed and explained as something the **human** types after a
+session. That is wrong. In this workflow the AI writes the command inside the
+bash block the human is already pasting, so the human never composes it.
+
+The human's only job is: run the block, paste the output back. Anything that
+assumes otherwise is a design error.
+
+See `docs/workflow.md`, which now states this up front.
+
+### Also wrong
+
+- Proposed a 5-session counting trial to prove `prime` helps. Busywork: daily
+  use answers it in a week for free. Don't invent experiments.
+- Answered "how do I test this" with procedure instead of building the next
+  command.
+- Asked questions the pasted workflow prompt already answered.
+
+### What follows
+
+The product is two commands run once per chat: `tg fresh` (prompt with a filled
+`## Project` section) and `tg resume` (same, plus what the last session learned).
+Prompt text belongs in a file, not in the binary.
+
 ## 2026-10-08 — Initial investigation
 
 ### Environment
