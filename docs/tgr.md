@@ -31,8 +31,48 @@ from a rewrite.
   terminals that do not bracket pastes, the `\x1b[?2004l` suppression, and
   re-wrapping approved payloads in paste markers.
 
-## What is deliberately different
+## `tgr --check`: classification without a terminal
 
+`tg` has no way to ask "what do you think of this text?" except by starting it
+on a terminal and pasting. `tgr` gained one, because a separate program needs
+to gate blocks without a human present:
+
+```text
+tgr --check FILE     # classify a file
+tgr --check -        # classify stdin, read to EOF
+```
+
+| Exit | Meaning |
+| --- | --- |
+| 0 | safe: nothing matched |
+| 1 | danger |
+| 3 | review |
+| 2 | usage, read, size or encoding error: the caller must fail closed |
+
+stderr carries one `rule=<name> risk=<safe\|review\|danger>` line per distinct
+matched rule, so a caller can apply its own policy by rule name without ever
+reading the paste.
+
+It calls `classify_with` — the same function the paste path calls, with the
+same config — so a `--check` verdict and a paste verdict cannot disagree.
+`crates/tgr/tests/check_parity.rs` proves that over the whole corpus by driving
+both paths; it is the test to trust, not this table.
+
+A rule that fails to compile, or that exceeds the backtrack limit, exits 3
+rather than 0. The paste path holds such a paste for review, and `--check` has
+to agree: "nothing matched" and "a rule could not run" are different answers.
+
+Input is capped at 8 MiB. Over the cap, invalid UTF-8, or an unreadable file
+is exit 2 — never a truncated classification, because half a paste judged safe
+is worse than refusing it. A stream that never ends is bounded too, so a caller
+piping `/dev/zero` gets an error rather than an out-of-memory.
+
+`--check` is the one place `tgr` reads I/O differently from the paste path:
+`--check -` reads to EOF instead of waiting for bracketed-paste markers,
+because there is no human to wait for. That is the only divergence, and it is
+I/O, not classification.
+
+## What is deliberately different
 ### 1. Sessions cannot be confused with each other
 
 The guarded child gets `TGR_ACTIVE=1`, **not** `TREX_GUARD_ACTIVE=1`.
@@ -117,6 +157,8 @@ identically to `tg`; changing it would silently reinterpret existing configs.
 ```
 tgr                 # guarded shell
 tgr <command> ...   # run one command under the guard
+tgr --check FILE    # classify FILE and exit (no shell)
+tgr --check -       # classify stdin
 tgr --help
 tgr --version
 ```
@@ -133,3 +175,7 @@ cargo test -p tgr
 The parity tests skip loudly if `./build/trex-guard` is missing (build it with
 `cmake -B build && cmake --build build`). They are slow — each paste starts a
 real shell — around three minutes each.
+
+`crates/tgr/tests/check_parity.rs` is also slow (it drives the pty path over the
+corpus) but needs no C++ binary: it compares `tgr --check` against `tgr`'s own
+paste path. Run it whenever a rule, the config parser, or `--check` changes.

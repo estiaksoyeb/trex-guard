@@ -16,21 +16,57 @@ Every claim below is either implemented code, a decision recorded in
 
 ## 1. The project in one paragraph
 
-`trex-guard` is two binaries in one repository:
+`trex-guard` is three binaries in one repository:
 
 - **`tg`** — TREX Guard, a frozen C++17 PTY paste-safety firewall. It
   intercepts pasted shell text *before* it reaches the shell and halts
   high-risk pastes for review. Sources in `src/`, built by CMake.
+- **`tgr`** — the same guard in Rust, running **beside** `tg` rather than
+  instead of it. Same rules, same config file, separate session marker. Sources
+  in `crates/tgr/`, built by Cargo. See `docs/tgr.md`.
 - **`tcx`** — TREX ConteXt, a Rust binary that keeps AI-assisted context
   *outside* the repository: decisions, gotchas, open questions, and a shallow
   annotated map of the tree. Sources in `crates/tcx/`, built by Cargo.
 
-They share a repository and nothing else. That is deliberate (see §8.1).
+They share a repository and almost nothing else. That is deliberate (see §8.1).
 
-`tg` and `tcx` are not two halves of one feature. `tg` protects the terminal
-from a bad paste. `tcx` answers "what should a new chat know before it starts".
-The only place they touch is that `tg fresh` / `tg resume` are forwarded to
-`tcx`, in one direction only.
+The guards and `tcx` are not two halves of one feature. A guard protects the
+terminal from a bad paste. `tcx` answers "what should a new chat know before it
+starts". The only place they touch is that `tg fresh` / `tg resume` are
+forwarded to `tcx` by the `tg` launcher, in one direction only. `tgr` is a bare
+guard binary with no launcher and no forwarding.
+
+### Which guard to use
+
+Either. `tg` is the one that has been used longest; `tgr` is the port, on trial
+for daily use. The human's choice, not yours — and never assume the other is
+absent, because **both can be installed and running**.
+
+```bash
+tg              # or tgr: both start a guarded shell
+tg fresh | clip # per-chat commands: tg only (see below)
+```
+
+The division is exact and worth stating plainly:
+
+- **Starting a shell**: `tg` or `tgr`. Interchangeable.
+- **`fresh` / `resume`**: `tg` only. `tgr` is a guard and nothing else, so
+  `tgr fresh` starts a guarded shell and tries to run a command called `fresh`.
+  It does not forward to `tcx`. Use `tg fresh` and `tg resume` whichever guard
+  you started.
+
+So "use tgr" means exactly one thing: type `tgr` instead of `tg` on the line
+that starts a shell. Nothing else in the loop changes.
+
+`tgr` also shows **more** review prompts than `tg` in two cases, by design
+(`docs/tgr.md`): a user rule in `config.ini` that does not compile, and a user
+rule that exceeds the backtrack limit. Both hold the paste at `Review` where
+`tg` would have silently dropped the rule. If the human sees a Review prompt
+under `tgr` that `tg` never gave, that is the port working as intended, not a
+new risk in the paste.
+
+Both read the **same** `~/.config/trex-guard/config.ini` (read-only), so a
+custom rule added for one applies to both. Neither writes it.
 
 ---
 
@@ -51,7 +87,7 @@ this repository.
 ### The loop
 
 ```text
-human:  tg                        # fresh terminal -> guard active
+human:  tg    (or tgr)            # fresh terminal -> guard active
 human:  tg fresh | clip           # prompt with the Project section filled in
 human:  paste into a new chat
 
@@ -213,7 +249,7 @@ Three rules follow from this, and each one has a reason:
 | Rule | Why |
 | --- | --- |
 | The repo must not be polluted | The human works in worktrees and clones; a `.ai/` folder in the repo goes stale per checkout and pollutes diffs. Existing `.ai/` dirs are an *import source*, never a destination. |
-| Never share `~/.config/trex-guard` | That belongs to `tg` and holds the live guard config. Two tools editing one config file corrupts both. |
+| Never *write* `~/.config/trex-guard` | That is the live guard config, shared read-only by `tg` and `tgr`. A third tool editing it can corrupt the guards. |
 | `TCX_HOME` exists | Termux and a proot/chroot have different `HOME`s, which would silently create two stores. One absolute path fixes that. On this machine all three XDG vars are unset, so the fallback is the normal path, not an edge case. |
 
 ### Project identity
@@ -341,6 +377,7 @@ against the parser by the test suite so this list cannot silently rot:
 | `--list` | `note` | print every note instead of appending |
 | `-b, --budget BYTES` | `prime`, `resume` | byte cap on notes (default 6000); `fresh` recognises it and refuses it, because `fresh` prints no notes |
 | `-T, --template FILE` | `fresh`, `resume` | use this prompt instead of the config copy |
+| `-p, --path PATH` | `note`, `find`, `prime`, `import`, `fresh`, `resume`, `map` | resolve this project instead of the current directory |
 | `--tags` | `find` | list keywords with counts |
 | `-k, --kind KEYWORD` | `find` | only notes carrying this keyword; repeatable |
 | `-d, --dir DIR` | `import` | source `.ai/` directory |
@@ -396,13 +433,51 @@ Spell them long (`--kind`, `--dir`, `--depth`) and the ambiguity disappears.
 
 ## 8. Why the pieces are separate
 
-### 8.1 Why `tg` stays frozen
+### 8.1 Why `tg` stays frozen, and why `tgr` is separate
 
 `tg` is a security tool. A security tool that also indexes files has a larger
 attack surface and a weaker story. Splitting keeps it auditable, keeps "`tg` is
 tested and unchanged" a true statement, and means a regression has one possible
 cause, not two. The dependency is one-way: `tg` may call `tcx`; `tcx` never
-imports the guard.
+imports a guard.
+
+`tgr` is a separate binary for the same reason plus one more: a rewrite of a
+security tool is the riskiest change you can make to one, because the only
+specification it has is its own behaviour. Shipping it *beside* the original
+means the original can still protect the terminal while the port is compared
+against it. The rule throughout the port was "match `tg` exactly, including its
+quirks; change only what is provably wrong, and write down every difference."
+Those five differences are in `docs/tgr.md`, and they are not all the same
+kind of thing:
+
+- **stricter about pastes** — 2 and 3 hold pastes at `Review` that `tg` would
+  have let through, because a rule could not run;
+- **an isolation choice** — 1 keeps the two guards' sessions separate;
+- **no behaviour change** — 4 and 5 trade a fatal error and a signal-handler
+  re-raise for a default and a normal unwind.
+
+Do not read "deliberate difference" as "more cautious". Differences 2 and 3 are
+the only ones that change what the human sees.
+
+**They cannot be confused for each other.** The guarded child gets
+`TGR_ACTIVE=1` from `tgr` and `TREX_GUARD_ACTIVE=1` from `tg`, and each guard
+checks only its own. `scripts/tg` refuses to start when `TREX_GUARD_ACTIVE=1`,
+so if `tgr` set that variable you could never run `tg` inside a `tgr` session.
+A test runs the installed `tg` inside a real `tgr` and requires it to answer —
+if that ever breaks, the marker was changed, not the shell.
+
+**They share the config file on purpose.** The human's custom rules must apply
+identically to both, or `tgr` is guarding a different system than the one that
+was configured. Sharing is safe because both only read it. The §4 rule that
+`tcx` must never touch `~/.config/trex-guard` still stands and is about
+*writing*.
+
+**The port is verified against the shipped binary, not against a test table.**
+`crates/tgr/tests/` runs the real `./build/trex-guard` and `tgr` on the same
+pastes through a pseudo-terminal and requires the same verdict — once with the
+built-in rules, once with the live `config.ini`. That is the property to
+preserve: **if `tgr` diverges from `tg`, the parity tests are what notice.** Do
+not "fix" a parity failure by changing the expectation.
 
 ### 8.2 Why config is never read from the repository
 
@@ -428,11 +503,29 @@ Stored structure rots on the first `git mv`; generated structure cannot. Stored
 judgment does not rot on a move, it merely becomes dated. Each half stores only
 what the other cannot produce.
 
-### 8.5 Why no dependency beyond `std`
+### 8.5 Why `tcx` has no dependency beyond `std`
 
 `tcx` builds with no external crates. It cross-compiles and installs trivially,
 and it has no supply chain for a security-adjacent tool. Revisit only when a
 real need appears.
+
+### 8.6 Why `tgr` does have dependencies
+
+`tgr` is not `tcx`, and the difference is worth stating because it looks like an
+inconsistency. A guard needs two things `std` does not provide well: a regex
+engine with the same behaviour as C++ `std::regex`, and safe POSIX PTY calls
+(`forkpty`, `termios`, `ioctl`, signals).
+
+- `fancy-regex` — the closest equivalent to `std::regex`. **One engine for
+  everything**, built-in and user rules alike, so there is one behaviour to
+  reason about rather than two. It backtracks, which is why every user regex is
+  given a backtrack limit and a limit hit fails closed (`Review`, never `Safe`).
+- `nix` — wraps the PTY syscalls. Hand-rolling `forkpty` and `termios` in a
+  security binary is more unsafe code than the wrapper saves.
+
+That is the whole dependency list, and it is pinned in `crates/tgr/Cargo.toml`.
+Adding a third crate to a guard needs a reason as good as these.
+
 
 ---
 
@@ -520,6 +613,57 @@ do" after it was rejected, and `scripts/tcx` carried its own stale copy of the
 help. Both were removed. **If a decision changes, grep the docs for the old
 wording in the same session.**
 
+### 9.11 Ported from memory instead of from the source
+
+The guard is 1858 lines of C++ and every branch of it decides whether a command
+is *seen*. A "cleaner" Rust rewrite might handle one more quoting case and stop
+catching a paste the original caught. The port was therefore made by reading
+all of `src/` first, branch by branch, including the quirks — `||` ends a
+pipeline but a bare `|` continues it, an unterminated quote runs to the end,
+`git reset --harder` must stay Safe.
+
+**Rule: for a behaviour-preserving port, the original source is the spec for
+*what to write*. Read it before writing, and keep the quirks, because the quirks
+are behaviour.** It is not the spec for *whether you succeeded* — see §9.12.
+
+### 9.12 A passing test proved only that it matched my reading
+
+`cpp_suite.rs` ports all 88 cases from `tests/test_rules.cpp` verbatim. It
+passed, and that proved nothing about whether the port matched the *binary* — it
+proved the port matched my transcription of the test file. The real check was
+running the shipped `trex-guard` and `tgr` on the same pastes through a pty and
+diffing verdicts (`parity.rs`, `parity_real_config.rs`).
+
+So the two rules stack, they do not compete: **read the source to write it
+(§9.11), then compare against the running binary to believe it (§9.12).** Source
+reading says what to build; only the binary can say whether you built it. Same
+failure as §9.7, from another direction.
+
+### 9.13 Four times the harness lied, not the product
+
+Every one of these looked like a `tgr` defect. None was:
+
+- a generated Python script contained Rust syntax (`Some(...)`), so the helper
+  died before printing anything;
+- the pty driver **re-sent the paste** once the shell was back at its prompt,
+  which looked like a hang;
+- the pty driver **wrote the paste before bash had finished starting**; the
+  terminal buffered it and bash read it as ordinary typing, so it was never
+  captured as a bracketed paste and nothing was classified. The end-to-end
+  tests had been **passing on that race** the whole time;
+- a test expected a review prompt for `touch`, which neither guard flags. The
+  test asserted a rule that does not exist.
+
+The third is the one to remember. It was found by running the freshly
+installed binary by hand and seeing every paste echoed raw — which looks
+exactly like a guard that stopped working. The suite was green; the suite was
+green for the wrong reason.
+
+**Rule: when a test fails, establish whether the product or the harness is
+lying before changing either. And a green suite is not evidence until you have
+seen the thing it claims to observe actually happen.** The harness is code
+too, and it must wait for what it reports on.
+
 ---
 
 ## 10. What "clear" looks like
@@ -540,6 +684,7 @@ Before proposing anything, be able to state:
 | You need | Read |
 | --- | --- |
 | the full design record, every decision and its measurement | `docs/tcx.md` |
+| why `tgr` exists, its deliberate differences, and how it is verified | `docs/tgr.md` |
 | dated history of each slice and what it fixed | `docs/development-log.md` |
 | the guard's PTY model and security boundary | `docs/architecture.md` |
 | guard config syntax | `docs/configuration.md` |
@@ -549,13 +694,44 @@ Before proposing anything, be able to state:
 ### Building and testing
 
 ```bash
-cargo test                  # all tcx tests
-cargo build --release       # target/release/tcx
-cmake -B build && cmake --build build   # the guard, independent
+cmake -B build && cmake --build build   # tg: build FIRST
+cargo test                              # tcx and tgr
+cargo test -p tcx                       # tcx alone (147 tests, fast)
+cargo test -p tgr --lib --test cpp_suite --test pty_e2e   # tgr, skipping parity
+cargo build --release -p tgr            # target/release/tgr
 ```
 
-The two builds are independent. `Cargo.toml` at the repo root is a separate
-workspace that happens to share the directory with the CMake project.
+**The order matters.** `cargo test` runs the two `tgr` parity tests, which drive
+`./build/trex-guard`. If `tg` is not built, they skip loudly rather than fail —
+so a green `cargo test` before the cmake step proves nothing about `tgr`
+matching `tg` (§9.12). Build `tg` first, or accept that parity was skipped.
+
+The parity tests take about three minutes each: every paste starts a real
+shell. Use the `cargo test -p tgr --lib --test cpp_suite --test pty_e2e` line
+while iterating, and run the full `cargo test` before committing anything that
+touches `crates/tgr/src/rules.rs`, `shell.rs` or `config.rs`.
+
+`./build/trex-guard` is what the parity tests drive, so what matters is that it
+is built at all and is left alone. Do not rebuild it with
+`-DCMAKE_BUILD_TYPE=Release` "to help": the point of the parity test is to agree
+with the guard the human actually runs, not with whichever build is newest.
+
+One thing is known about this tree, and it was found by disbelieving the cache:
+until 2026‑11‑17 `./build/trex-guard` had been compiled with `-O3` while
+`build/CMakeCache.txt` said `Debug`. The cache was written at 00:05, the objects
+at 00:01. `cmake --build build` did not recompile them until forced; a fresh
+`cmake --build build` produced a real `-g` binary, and parity was re-run green
+against it afterwards.
+
+**So do not trust the cache for how the binary was compiled.** Check
+`build/CMakeFiles/trex-guard.dir/flags.make` and the object timestamps. If they
+disagree, rebuild and re-run parity. This is §9.8 in build clothing: the
+statement and the artifact disagreed, and only the artifact runs.
+
+The two builds are independent: CMake builds `tg`, Cargo builds `tgr` and
+`tcx`. The root `Cargo.toml` is a Cargo workspace containing `crates/tcx` and
+`crates/tgr`; it merely shares a directory with the CMake project, and neither
+build knows about the other.
 
 ### Repository layout
 
@@ -565,8 +741,13 @@ tests/                guard tests (C++)
 crates/tcx/src/       tcx: id, store, notes, prime, find, import, project,
                       briefing, map, help
 crates/tcx/tests/     integration tests, including help drift detection
+crates/tgr/src/       tgr: risk, config, shell, rules, pty, main
+crates/tgr/tests/     cpp_suite (ported cases), parity (vs the real binary),
+                      parity_real_config, pty_e2e, support/*.py drivers
 scripts/tg            launcher; forwards fresh/resume to tcx
 scripts/tcx           tcx launcher (delegates --help to the binary)
+                      (there is no scripts/tgr: tgr is the binary itself)
 scripts/tcx-integration.bash   sets TCX_HOME, defines tcx-clip
 docs/                 this file and the records above
 ```
+

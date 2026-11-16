@@ -8,7 +8,41 @@
 //! | `tgr` | `$SHELL`, plus `--norc` if an ancestor was started with it |
 //! | `tgr -x ...` | `$SHELL -x ...` (flags are passed *to the shell*) |
 //! | `tgr cmd ...` | `cmd ...` (first non-flag argument is the program) |
+//! | `tgr --check FILE` | nothing; the file is classified and `tgr` exits |
 //! | any of the above | `--force` is stripped wherever it appears |
+//!
+//! # `--check`
+//!
+//! A non-PTY entry point for another program (the `tgw` watchdog) to ask the
+//! guard what it thinks of a paste without starting a shell:
+//!
+//! ```text
+//! tgr --check FILE     # or "-" to read the text from stdin
+//! tgr --check -        # reads to EOF, unlike the paste path
+//! ```
+//!
+//! It calls [`tgr::rules::classify_with`] — the same function the PTY path
+//! calls — with the same config, so a verdict here and a verdict on a paste
+//! cannot disagree. The only difference is I/O: `--check -` reads to EOF
+//! instead of waiting for bracketed-paste markers, because there is no human
+//! to wait for.
+//!
+//! Exit codes are the contract `tgw` codes against:
+//!
+//! | Code | Meaning |
+//! | --- | --- |
+//! | 0 | safe: nothing matched |
+//! | 1 | danger: at least one danger rule matched |
+//! | 3 | review: worst match is review |
+//! | 2 | usage, read, size or encoding error: the caller must fail closed |
+//!
+//! Input is capped at [`CHECK_MAX_BYTES`]. Over the cap is exit 2, never a
+//! truncated classification: half a paste judged safe is worse than refusing
+//! it.
+//!
+//! stderr gets one `rule=<name> risk=<safe\|review\|danger>` line per distinct
+//! matched rule, so a caller can map rule names to its own policy without
+//! ever reading the paste itself.
 //!
 //! # Why `--force` exists
 //!
@@ -24,6 +58,7 @@
 //! that makes the loop unwind normally, restoring the terminal and forwarding
 //! the signal to the child.
 
+use std::io::Read;
 use std::sync::atomic::Ordering;
 
 use nix::sys::signal::{sigaction, SaFlags, SigAction, SigHandler, SigSet, Signal};
@@ -47,12 +82,19 @@ fn help() -> String {
 Usage:
   tgr               Launch a guarded shell
   tgr <command>     Run a command under the guard
+  tgr --check FILE  Classify FILE and exit (no shell, no guard)
+  tgr --check -     Classify text read from stdin
   tgr --help        Show this help message
   tgr --version     Show version ({VERSION})
 
 Options:
   --force           Start even when a guard is already active
                     (scripts pass this; it is stripped from the command)
+
+--check exit codes (for programs that gate on them):
+  0  safe      1  danger      3  review      2  usage or read error
+  stderr: one line per matched rule, \"rule=<name> risk=<safe|review|danger>\"
+  Any code other than 0, 1 or 3 must be treated as fail closed.
 
 The guard reads the same config as tg:
   $XDG_CONFIG_HOME/trex-guard/config.ini
@@ -147,8 +189,140 @@ fn install_handlers() -> nix::Result<()> {
     install(Signal::SIGWINCH, on_sigwinch)
 }
 
+/// Parses `--check PATH` / `--check -` out of argv.
+///
+/// Only recognised as the **first** argument, so it cannot shadow a command
+/// named `--check`, and only in its own two-word form: `tgr --check` with no
+/// argument is a usage error rather than a request to classify an empty name.
+fn check_arg(argv: &[String]) -> Option<Result<&str, &'static str>> {
+    if argv.first().map(String::as_str) != Some("--check") {
+        return None;
+    }
+    match argv.get(1) {
+        Some(path) if argv.len() == 2 => Some(Ok(path.as_str())),
+        Some(_) => Some(Err("--check takes exactly one path")),
+        None => Some(Err("--check needs a file, or - for stdin")),
+    }
+}
+
+/// Maps a classified result to the `--check` exit code.
+///
+/// `Safe` is 0, `Review` is 3, `Danger` is 1. Anything the caller does not
+/// recognise is told to fail closed, so the codes must stay distinct.
+fn check_exit(matched: &tgr::risk::Match) -> i32 {
+    match matched.risk {
+        tgr::risk::Risk::Safe => 0,
+        tgr::risk::Risk::Danger => 1,
+        tgr::risk::Risk::Review => 3,
+    }
+}
+
+/// Prints one machine-stable line per distinct matched rule.
+///
+/// A rule that fires on several snippets is reported once: the caller cares
+/// which rules matched, not how many times.
+fn report_rules(matched: &tgr::risk::Match) -> String {
+    fn walk(m: &tgr::risk::Match, seen: &mut Vec<(String, tgr::risk::Risk)>) {
+        if m.rule.is_empty() {
+            return;
+        }
+        for inner in &m.matches {
+            walk(inner, seen);
+        }
+        if !seen.iter().any(|(r, _)| *r == m.rule) {
+            seen.push((m.rule.clone(), m.risk));
+        }
+    }
+
+    let mut seen: Vec<(String, tgr::risk::Risk)> = Vec::new();
+    walk(matched, &mut seen);
+    seen.iter()
+        .map(|(rule, risk)| format!("rule={rule} risk={risk}\n"))
+        .collect()
+}
+
+/// Largest input `--check` will classify.
+///
+/// The paste path has a terminal-sized feed, so it never needed a cap. A
+/// caller piping a file can hand over gigabytes, and classifying that is a
+/// memory exhaustion, not a security decision. Over the cap is exit 2 (fail
+/// closed), never a truncated classification: half a paste classified as safe
+/// is worse than refusing it.
+const CHECK_MAX_BYTES: u64 = 8 * 1024 * 1024;
+
+/// Reads `--check` input, refusing anything larger than [`CHECK_MAX_BYTES`].
+///
+/// `-` reads stdin to EOF; the paste path waits for bracketed-paste markers
+/// instead, because it has a human to wait for and `--check` does not.
+fn read_check_input(path: &str) -> Result<String, String> {
+    fn take<R: std::io::Read>(r: R) -> Result<String, String> {
+        let mut buf = Vec::new();
+        // `take` bounds the read, so a pipe that never ends cannot exhaust
+        // memory; the extra byte is what tells us it was over the cap.
+        r.take(CHECK_MAX_BYTES + 1)
+            .read_to_end(&mut buf)
+            .map_err(|e| e.to_string())?;
+        if buf.len() as u64 > CHECK_MAX_BYTES {
+            return Err(format!("input exceeds {CHECK_MAX_BYTES} bytes"));
+        }
+        String::from_utf8(buf).map_err(|e| format!("input is not valid UTF-8: {e}"))
+    }
+
+    if path == "-" {
+        take(std::io::stdin())
+    } else {
+        let f = std::fs::File::open(path).map_err(|e| e.to_string())?;
+        take(f)
+    }
+}
+
+/// Runs `--check` and returns the process exit code.
+fn run_check(arg: Result<&str, &'static str>) -> i32 {
+    let path = match arg {
+        Ok(p) => p,
+        Err(msg) => {
+            eprintln!("tgr: {msg}");
+            return 2;
+        }
+    };
+
+    let text = match read_check_input(path) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("tgr: --check {path}: {e}");
+            return 2;
+        }
+    };
+
+    let config = tgr::config::load(None);
+    let verdict = tgr::rules::classify_with(&text, Some(&config));
+    for problem in &verdict.problems {
+        let msg = match problem {
+            tgr::rules::RegexProblem::Invalid { rule, message } => {
+                format!("rule `{rule}` does not compile ({message}); the paste is held")
+            }
+            tgr::rules::RegexProblem::BacktrackLimit { rule } => {
+                format!("rule `{rule}` exceeded the backtrack limit; the paste is held")
+            }
+        };
+        eprintln!("tgr: rule problem: {msg}");
+    }
+    eprint!("{}", report_rules(&verdict.matched));
+
+    // Mirror the PTY path: a rule that could not run holds the paste, so the
+    // caller must not treat it as safe merely because nothing matched.
+    if verdict.has_problems() {
+        return 3;
+    }
+    check_exit(&verdict.matched)
+}
+
 fn main() {
     let argv: Vec<String> = std::env::args().skip(1).collect();
+
+    if let Some(arg) = check_arg(&argv) {
+        std::process::exit(run_check(arg));
+    }
 
     match argv.first().map(String::as_str) {
         Some("--help" | "-h") => {
@@ -242,8 +416,121 @@ mod tests {
         // Guards against the help drifting from the argument parser: each
         // accepted form must be described.
         let text = help();
-        for needle in ["tgr <command>", "--help", "--version", "--force", "TGR_ACTIVE"] {
+        for needle in [
+            "tgr <command>",
+            "--help",
+            "--version",
+            "--force",
+            "TGR_ACTIVE",
+            "--check FILE",
+            "--check -",
+        ] {
             assert!(text.contains(needle), "help does not mention {needle:?}");
         }
+    }
+
+    #[test]
+    fn help_documents_the_check_exit_codes() {
+        // The exit codes are a contract another program codes against, so
+        // every one of them must be stated, and the fail-closed rule with it.
+        let text = help();
+        for needle in ["0  safe", "1  danger", "3  review", "2  usage"] {
+            assert!(text.contains(needle), "help omits exit code {needle:?}");
+        }
+        assert!(text.contains("fail closed"), "help omits the fail-closed rule");
+    }
+
+    #[test]
+    fn check_is_only_recognised_as_the_first_argument() {
+        assert_eq!(check_arg(&[]), None);
+        assert_eq!(check_arg(&v(&["ls", "--check", "f"])), None);
+        assert_eq!(check_arg(&v(&["--check", "f"])), Some(Ok("f")));
+        assert_eq!(check_arg(&v(&["--check", "-"])), Some(Ok("-")));
+    }
+
+    #[test]
+    fn check_without_a_path_is_a_usage_error_not_an_empty_name() {
+        assert!(check_arg(&v(&["--check"])).unwrap().is_err());
+        assert!(check_arg(&v(&["--check", "a", "b"])).unwrap().is_err());
+    }
+
+    #[test]
+    fn exit_codes_distinguish_all_three_risks() {
+        // If two risks shared a code, a caller could not tell "danger" from
+        // "review", and the contract in the docs would be a lie.
+        let mk = |risk| tgr::risk::Match {
+            risk,
+            rule: "r".into(),
+            snippet: "s".into(),
+            explanation: String::new(),
+            matches: Vec::new(),
+        };
+        assert_eq!(check_exit(&mk(tgr::risk::Risk::Safe)), 0);
+        assert_eq!(check_exit(&mk(tgr::risk::Risk::Danger)), 1);
+        assert_eq!(check_exit(&mk(tgr::risk::Risk::Review)), 3);
+    }
+
+    #[test]
+    fn report_rules_names_each_rule_once() {
+        let inner = |rule: &str, risk| tgr::risk::Match {
+            risk,
+            rule: rule.into(),
+            snippet: "s".into(),
+            explanation: String::new(),
+            matches: Vec::new(),
+        };
+        let matched = tgr::risk::Match {
+            risk: tgr::risk::Risk::Danger,
+            rule: "rm -rf".into(),
+            snippet: "s".into(),
+            explanation: String::new(),
+            matches: vec![
+                inner("rm -rf", tgr::risk::Risk::Danger),
+                inner("rm -rf", tgr::risk::Risk::Danger),
+                inner("git clean", tgr::risk::Risk::Review),
+            ],
+        };
+        let out = report_rules(&matched);
+        assert_eq!(out, "rule=rm -rf risk=danger\nrule=git clean risk=review\n");
+    }
+
+    #[test]
+    fn report_rules_is_empty_for_a_safe_paste() {
+        assert_eq!(report_rules(&tgr::risk::Match::safe()), "");
+    }
+
+    #[test]
+    fn check_refuses_input_over_the_cap() {
+        // Over the cap is a refusal, not a truncated classification: half a
+        // paste judged safe would be worse than not answering.
+        let path = std::env::temp_dir().join(format!("tgr-cap-{}", std::process::id()));
+        std::fs::write(&path, vec![b'a'; CHECK_MAX_BYTES as usize + 1]).unwrap();
+        let err = read_check_input(path.to_str().unwrap()).unwrap_err();
+        let _ = std::fs::remove_file(&path);
+        assert!(err.contains("exceeds"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn check_accepts_input_at_the_cap() {
+        let path = std::env::temp_dir().join(format!("tgr-capok-{}", std::process::id()));
+        std::fs::write(&path, vec![b'a'; CHECK_MAX_BYTES as usize]).unwrap();
+        let got = read_check_input(path.to_str().unwrap());
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(got.unwrap().len(), CHECK_MAX_BYTES as usize);
+    }
+
+    #[test]
+    fn check_refuses_non_utf8() {
+        let path = std::env::temp_dir().join(format!("tgr-utf8-{}", std::process::id()));
+        std::fs::write(&path, [0xff, 0xfe, 0x00]).unwrap();
+        let err = read_check_input(path.to_str().unwrap()).unwrap_err();
+        let _ = std::fs::remove_file(&path);
+        assert!(err.contains("UTF-8"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn check_reports_a_missing_file() {
+        let err = read_check_input("/nonexistent/tgr-no-such-file").unwrap_err();
+        assert!(!err.is_empty());
     }
 }
