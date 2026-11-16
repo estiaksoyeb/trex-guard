@@ -288,6 +288,33 @@ directory**. It deduplicates on re-run, so importing twice is safe.
 
 Bare `tcx` is a **usage error (2)**, not success.
 
+### Help
+
+`tcx --help` lists every command, its usage, the exit codes and the environment.
+`tcx <command> --help` (or `-h`) prints that command's usage, options, defaults
+and warnings. `--help` is answered before the command parses anything, so
+`tcx note --kind gotcha --help` shows the note help rather than consuming
+`--help` as a value.
+
+Both are rendered from one table in `src/help.rs`. A second copy of the command
+list is a copy that goes stale, so `scripts/tcx` no longer has its own help
+text; it passes `--help` to the binary.
+
+`tests/help.rs` keeps the table honest in both directions:
+
+| Test | Catches |
+| --- | --- |
+| every documented command has help | a command in the table that the binary does not answer |
+| every command the binary accepts is documented | a dispatcher arm added without a table entry |
+| every accepted flag is documented | a flag in the docs that the parser rejects |
+| help wins over other arguments | `--help` being swallowed as an option value |
+| shell wrapper delegates | help text duplicated in `scripts/tcx` |
+| top-level lists commands and exit codes | a command or exit code missing from the summary |
+
+Each was verified by deliberately breaking the code and watching the test fail:
+a dispatcher arm without a table entry, a documented flag that does not exist,
+and `--help` handling disabled.
+
 ### `tcx id` output
 
 Machine-readable (default), opaque id first so it can be captured:
@@ -480,7 +507,7 @@ team sync, "other guards on the PTY layer", renaming `tg`, seam patterns,
 
 ## 14. Test status
 
-**116 tests passing** across eight test files plus unit tests:
+**127 tests passing** across eight test files plus unit tests:
 
 | File | Tests | Covers |
 | --- | --- | --- |
@@ -491,6 +518,7 @@ team sync, "other guards on the PTY layer", renaming `tg`, seam patterns,
 | `tests/notes.rs` | 19 | render, parse, sanitise, append, concurrency |
 | `tests/prime.rs` | 16 | stamp, golden output, ordering, budget, CSI |
 | `tests/cli.rs` | 7 | `id` output shape, exit codes, adoption, `find -k` |
+| `tests/help.rs` | 7 | help coverage, drift detection, wrapper delegation |
 | `tests/note_prime.rs` | 12 | `note`/`prime` end to end, worktrees, determinism |
 | `tests/find_import.rs` | 18 | `find`, keyword scoping, `import`, dedupe, source immutability |
 | `tests/wrapper.rs` | 3 | launcher resolution, no self-recursion |
@@ -524,7 +552,7 @@ helper, verified by hand (log, show, reset, and both validation errors).
 Plus CLI tests: opaque-id-first output, stable human labels, adoption preserves
 notes, exit codes, version, no-`HOME` error.
 
-Current status: **116 tests passing** (5 project + 3 briefing + 13 fresh + 19
+Current status: **127 tests passing** (5 project + 3 briefing + 13 fresh + 19
 identity + 19 notes + 16 prime + 6 CLI + 12 note/prime CLI + 17 find/import +
 3 wrapper).
 

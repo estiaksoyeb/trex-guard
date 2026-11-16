@@ -1,5 +1,22 @@
 # Development Log
 
+## 2026-11-16 — per-command help, and a test that catches help drift
+
+`tcx <command> --help` did not exist: every command answered `--help` with
+"unknown option" and exit 2, and the only help was one hand-written block.
+`--path` was undocumented on several commands and the defaults (6000 bytes,
+`-k decision`) were never stated.
+
+Help is now rendered from a single table in `src/help.rs`, used by both the
+summary and each command. `--help` is answered before a command parses, so it
+cannot be swallowed as an option value. `scripts/tcx`, which carried its own
+shorter and stale copy, now delegates.
+
+`tests/help.rs` probes the real binary so the documentation cannot drift: it
+reads the dispatcher's command list out of `main.rs`, rejects flags the parser
+does not accept, and fails if a dispatcher arm is missing from the table. All
+three were verified by deliberately breaking the code.
+
 ## 2026-11-16 — `tcx find -k`
 
 Rule 18 of the workflow prompt instructs the AI to read notes with

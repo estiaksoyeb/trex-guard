@@ -8,6 +8,7 @@
 
 pub mod briefing;
 pub mod find;
+pub mod help;
 pub mod id;
 pub mod import;
 pub mod notes;

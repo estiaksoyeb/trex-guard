@@ -6,20 +6,8 @@
 
 set -e
 
-if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
-    echo "tcx - TREX ConteXt Launcher"
-    echo ""
-    echo "Usage:"
-    echo "  tcx id       Resolve the project identity and store path"
-    echo "  tcx note     Append a dated note"
-    echo "  tcx prime    Print a session briefing"
-    echo "  tcx find     Search notes"
-    echo "  tcx import   Import a .ai/ directory"
-    echo "  tcx --version"
-    echo ""
-    echo "See \`tcx --help\` from the binary for full options."
-    exit 0
-fi
+# Help and version are answered by the binary, never duplicated here: a second
+# copy of the command list is a copy that goes stale.
 
 if [ "$1" = "--version" ] || [ "$1" = "-v" ]; then
     echo "tcx (trex-guard wrapper) 0.1.0"

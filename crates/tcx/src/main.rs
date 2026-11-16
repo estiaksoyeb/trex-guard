@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use tcx::notes::{Kind, Note, Notes};
-use tcx::{briefing, id, project, store};
+use tcx::{briefing, help, id, project, store};
 
 /// Exit codes are part of the interface; scripts branch on them.
 const EXIT_OK: u8 = 0;
@@ -18,13 +18,20 @@ const EXIT_USAGE: u8 = 2;
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
     let Some(command) = args.first().map(String::as_str) else {
-        print_help();
+        print!("{}", help::overall());
         return ExitCode::from(EXIT_USAGE);
     };
 
+    // `tcx <command> --help` answers before the command parses anything, so a
+    // flag that is valid elsewhere cannot be mistaken for an error.
+    if help::wants_help(&args[1..]) && help::for_command(command).is_some() {
+        print!("{}", help::for_command(command).unwrap());
+        return ExitCode::from(EXIT_OK);
+    }
+
     match command {
         "--help" | "-h" | "help" => {
-            print_help();
+            print!("{}", help::overall());
             ExitCode::from(EXIT_OK)
         }
         "--version" | "-V" | "version" => {
@@ -589,37 +596,6 @@ fn run_briefing(mode: briefing::Mode, args: &[String]) -> ExitCode {
     eprintln!("tcx {command}: template {}", template_path.display());
     print!("{text}");
     ExitCode::from(EXIT_OK)
-}
-
-fn print_help() {
-    println!(
-        "tcx - TREX ConteXt\n\n\
-         Usage:\n  \
-         tcx id [--human] [PATH]\n  \
-         tcx note [-k KIND] [-f FILE]... [-t TAG]... TEXT\n  \
-         tcx note --list [PATH]\n  \
-         tcx prime [--budget BYTES] [PATH]\n  \
-         tcx find [-k KEYWORD]... [--tags] [QUERY...] [PATH]\n  \
-         tcx import [--dir DIR] [PATH]\n  \
-         tcx fresh [--template FILE] [PATH]\n  \
-         tcx resume [--budget BYTES] [PATH]\n  \
-         tcx --help | --version\n\n\
-         Commands:\n  \
-         id      Resolve the project identity and its store path\n  \
-         note    Append a dated note (decision|gotcha|open)\n  \
-         prime   Print a budgeted session briefing for pasting into a chat\n  \
-         find    Search notes; -k scopes by keyword, --tags lists keywords\n  \
-         import  Import an existing .ai/ directory (never modifies it)\n  \
-         fresh   Print the prompt with ## Project filled in from this repo\n  \
-         resume  As fresh, plus what previous sessions learned\n\n\
-         Template (never read from the repository):\n  \
-         --template FILE, else $TCX_HOME/config/prompt.md,\n  \
-         else <config>/tcx/prompt.md (i.e. ~/.config/tcx/prompt.md)\n\n\
-         Environment:\n  \
-         TCX_HOME   Single root containing data/, cache/ and config/\n  \
-         XDG_DATA_HOME, XDG_CACHE_HOME, XDG_CONFIG_HOME\n              \
-         Used when set; otherwise ~/.local/share, ~/.cache, ~/.config"
-    );
 }
 
 // Keeps `PathBuf` in scope for future commands that need it.
