@@ -164,11 +164,8 @@ fn cmd_run(rest: &[String]) -> i32 {
     // The whole loop runs through the same `process_once` as `tgw once`, so
     // there is exactly one pipeline in the program.
     let mut seen = Seen::new(16);
-    let mut ctx = Context {
-        cfg: &cfg,
-        log: &Log::new(cfg.log_dir(), 200),
-        seen: &mut seen,
-    };
+    let log = Log::new(cfg.log_dir(), 200);
+    let mut ctx = Context::new(&cfg, &log, &mut seen);
     let problems = tgw::run::check_state_dir(&cfg);
     if !problems.is_empty() {
         for p in &problems {
@@ -228,11 +225,8 @@ fn cmd_once(rest: &[String]) -> i32 {
         return code;
     }
     let mut seen = Seen::new(16);
-    let mut ctx = Context {
-        cfg: &cfg,
-        log: &Log::new(cfg.log_dir(), 200),
-        seen: &mut seen,
-    };
+    let log = Log::new(cfg.log_dir(), 200);
+    let mut ctx = Context::new(&cfg, &log, &mut seen);
     if let Err(e) = tgw::clip::ensure_state_dir(&cfg.state_dir()) {
         eprintln!("tgw: state dir {}: {e}", cfg.state_dir().display());
         return 1;

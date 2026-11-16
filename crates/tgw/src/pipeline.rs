@@ -65,11 +65,28 @@ pub struct Outcome {
     pub staged: Option<clip::Staged>,
 }
 
+impl<'a> Context<'a> {
+    /// Builds a context for one process. `seen` outlives the context because
+    /// the caller owns it across iterations.
+    pub fn new(cfg: &'a Config, log: &'a Log, seen: &'a mut Seen) -> Context<'a> {
+        Context {
+            cfg,
+            log,
+            seen,
+            last_ignore: None,
+        }
+    }
+}
+
 /// Everything the pipeline needs that is not config.
 pub struct Context<'a> {
     pub cfg: &'a Config,
     pub log: &'a Log,
     pub seen: &'a mut Seen,
+    /// The last routine ignore reason, so an idle watchdog does not write a
+    /// log line per poll. "Empty" and "duplicate" are the two the loop
+    /// produces continuously; anything unusual is logged every time.
+    last_ignore: Option<String>,
 }
 
 /// Runs every stage up to and including the gate.
@@ -150,8 +167,20 @@ pub fn process_once(ctx: &mut Context<'_>) -> Outcome {
 
 fn ignore(ctx: &mut Context<'_>, reject: Reject, started: Instant) -> Outcome {
     let mut entry = Entry::new(Verdict::Ignore, reject.reason());
-    entry.duration_ms = started.elapsed().as_millis() as u64;
-    let _ = ctx.log.append(&entry);
+
+    // An idle clipboard says "empty" every poll and an unchanged one says
+    // "duplicate". Logging each would be ~18,000 lines an hour of nothing.
+    // Log the first occurrence of a run, and log again when the reason
+    // changes -- including a read failure, which must not vanish because the
+    // previous poll was merely empty.
+    let routine = matches!(reject, Reject::Empty | Reject::Duplicate);
+    let same_as_last = ctx.last_ignore.as_deref() == Some(entry.reason.as_str());
+    if !(routine && same_as_last) {
+        entry.duration_ms = started.elapsed().as_millis() as u64;
+        let _ = ctx.log.append(&entry);
+    }
+    ctx.last_ignore = Some(entry.reason.clone());
+
     Outcome {
         verdict: Verdict::Ignore,
         reason: entry.reason,
@@ -313,6 +342,60 @@ fn run_reason(run: &crate::execute::RunResult, text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn scratch(tag: &str) -> (std::path::PathBuf, Config, Log) {
+        let d = std::env::temp_dir().join(format!("tgw-pipe-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let mut c = Config::default();
+        c.clip_get_cmd = "true".into();
+        c.gate_cmd = "true {file}".into();
+        c.state_dir = d.join("state").to_string_lossy().into_owned();
+        c.log_dir = d.join("log").to_string_lossy().into_owned();
+        let log = Log::new(c.log_dir(), 50);
+        (d, c, log)
+    }
+
+    #[test]
+    fn an_idle_loop_does_not_log_a_line_per_poll() {
+        // An empty clipboard is read every poll. Logging each read fills the
+        // log with nothing: found by running the real loop for 4 s and
+        // getting 12 lines.
+        let (d, cfg, log) = scratch("idle");
+        let mut seen = Seen::new(16);
+        let mut ctx = Context::new(&cfg, &log, &mut seen);
+        for _ in 0..20 {
+            let out = process_once(&mut ctx);
+            assert_eq!(out.verdict, Verdict::Ignore);
+        }
+        let n = log.tail(100).len();
+        assert!(n <= 2, "20 empty polls wrote {n} log lines");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_changed_ignore_reason_is_still_logged() {
+        // Suppressing repeats must not hide a *different* problem, such as the
+        // clipboard command failing after a run of empties.
+        let (d, mut cfg, log) = scratch("changed");
+        let mut seen = Seen::new(16);
+        {
+            let mut ctx = Context::new(&cfg, &log, &mut seen);
+            for _ in 0..3 {
+                process_once(&mut ctx);
+            }
+        }
+        cfg.clip_get_cmd = "false".into();
+        let mut seen2 = Seen::new(16);
+        let mut ctx = Context::new(&cfg, &log, &mut seen2);
+        process_once(&mut ctx);
+        let lines = log.tail(100);
+        assert!(
+            lines.iter().any(|l| l.contains("clipboard read failed")),
+            "a read failure after empties was swallowed: {lines:?}"
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
 
     #[test]
     fn a_dry_pass_is_never_run() {
