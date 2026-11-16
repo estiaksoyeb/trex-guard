@@ -282,6 +282,11 @@ fn auto_stays_locked_until_enough_approvals_ran() {
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(err.contains("locked"), "{err}");
 
+    // `once` is the same pipeline as `run`, so it must refuse too. Found by
+    // running it: `once` ran in locked auto, which was a quiet bypass.
+    let out = sb.plain(&["once"]);
+    assert_eq!(out.status.code(), Some(2), "`once` ran while auto was locked");
+
     // Do the approvals the lock asks for.
     sb.config("mode = confirm\nauto_unlock_approvals = 2");
     for i in 0..2 {

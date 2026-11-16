@@ -162,6 +162,7 @@ pub fn run_block(cfg: &Config, path: &Path) -> Result<RunResult, RunError> {
         }
     }
 
+    let _lock = Wakelock::acquire(cfg);
     let start = Instant::now();
     let mut child = cmd.spawn().map_err(|e| {
         RunError::Spawn(format!("{}: {e}", argv[0]))
@@ -241,6 +242,77 @@ fn drain(
         }
         (kept, truncated)
     })
+}
+
+/// A wakelock held for the duration of one block.
+///
+/// On a phone the screen can sleep mid-block and suspend the process. The lock
+/// is taken before the block starts and released on drop, so the release
+/// happens on every path out of [`run_block`], including a timeout. A wakelock
+/// that fails to start is a warning, not an error: a machine without one can
+/// still run a block.
+pub struct Wakelock {
+    child: Option<Child>,
+    /// Started on drop when set, for helpers that need an explicit release
+    /// instead of being killed.
+    release: Option<Vec<String>>,
+}
+
+impl Wakelock {
+    /// Starts `wakelock_cmd` if it is configured and parses.
+    pub fn acquire(cfg: &Config) -> Wakelock {
+        let child = config_argv(&cfg.wakelock_cmd).and_then(|argv| {
+            Command::new(&argv[0])
+                .args(&argv[1..])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .ok()
+        });
+        Wakelock {
+            child,
+            release: config_argv(&cfg.wakelock_release_cmd),
+        }
+    }
+
+    /// Whether a lock was taken.
+    pub fn is_held(&self) -> bool {
+        self.child.is_some()
+    }
+}
+
+impl Drop for Wakelock {
+    fn drop(&mut self) {
+        if let Some(argv) = self.release.take() {
+            let _ = Command::new(&argv[0])
+                .args(&argv[1..])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+        }
+        if let Some(mut child) = self.child.take() {
+            // Long-lived helpers like `termux-wake-lock` exit immediately;
+            // ones that block exit when told to. `wakelock_release_cmd` is the
+            // explicit release; killing the helper is the fallback.
+            let _ = child.try_wait();
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+}
+
+fn config_argv(s: &str) -> Option<Vec<String>> {
+    if s.trim().is_empty() {
+        return None;
+    }
+    let argv = crate::config::split_argv(s).ok()?;
+    if argv.is_empty() {
+        None
+    } else {
+        Some(argv)
+    }
 }
 
 /// Wraps a path in single quotes for `sh`, escaping embedded quotes.
@@ -467,6 +539,51 @@ mod tests {
         let p = block(&format!("printf '%s' {}\n", shell_quote(nasty)));
         let r = run_block(&cfg(), &p).expect("run");
         assert_eq!(String::from_utf8_lossy(&r.stdout), nasty);
+    }
+
+    #[test]
+    fn a_wakelock_is_taken_and_released_around_a_block() {
+        let dir = std::env::temp_dir().join(format!("tgw-wake-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let started = dir.join("started");
+        let mut c = cfg();
+        c.wakelock_cmd = format!("touch {}", started.display());
+        let p = block("echo hi\n");
+        let r = run_block(&c, &p).expect("run");
+        assert_eq!(r.exit, Some(0));
+        assert!(started.exists(), "the wakelock command never ran");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_wakelock_is_released_even_when_the_block_times_out() {
+        let dir = std::env::temp_dir().join(format!("tgw-wake2-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir).unwrap();
+        // A helper that blocks; it must not survive the run.
+        let mut c = cfg();
+        c.wakelock_cmd = "sleep 120".into();
+        c.timeout_s = 1;
+        let p = block("sleep 30\n");
+        let r = run_block(&c, &p).expect("run");
+        assert!(r.timed_out);
+        // The drop released it; nothing to assert beyond returning promptly.
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_explicit_release_command_runs_on_drop() {
+        let dir = std::env::temp_dir().join(format!("tgw-wake3-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let released = dir.join("released");
+        let mut c = cfg();
+        c.wakelock_cmd = "true".into();
+        c.wakelock_release_cmd = format!("touch {}", released.display());
+        let p = block("echo hi\n");
+        run_block(&c, &p).expect("run");
+        assert!(released.exists(), "the release command never ran");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

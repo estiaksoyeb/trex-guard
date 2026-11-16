@@ -29,7 +29,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::config::{Config, Mode};
+use crate::config::Config;
 use crate::holds;
 
 /// Set by the signal handler.
@@ -209,6 +209,7 @@ pub fn sweep_expired(cfg: &Config) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Mode;
 
     fn tmp(tag: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("tgw-run-{tag}-{}", std::process::id()));

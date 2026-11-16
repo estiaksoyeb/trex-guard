@@ -90,7 +90,7 @@ fn touch(w: &Path) -> String {
 #[test]
 fn auto_mode_runs_a_passing_block() {
     let sb = Sandbox::new("autorun");
-    sb.config("mode = auto");
+    sb.config("mode = auto\nauto_unlock_approvals = 0");
     let w = sb.witness();
     let out = sb.run(&["once"], &touch(&w), "0", "");
     let stdout = String::from_utf8_lossy(&out.stdout);
@@ -120,7 +120,7 @@ fn confirm_mode_never_runs_without_approval() {
 #[test]
 fn a_hold_never_runs_in_auto_mode() {
     let sb = Sandbox::new("autohold");
-    sb.config("mode = auto");
+    sb.config("mode = auto\nauto_unlock_approvals = 0");
     let w = sb.witness();
     let out = sb.run(&["once"], &touch(&w), "3", "rule=rm risk=review");
     assert!(!w.exists(), "a held block ran in auto:\n{}", String::from_utf8_lossy(&out.stdout));
@@ -129,7 +129,7 @@ fn a_hold_never_runs_in_auto_mode() {
 #[test]
 fn a_block_never_runs_in_auto_mode() {
     let sb = Sandbox::new("autoblock");
-    sb.config("mode = auto");
+    sb.config("mode = auto\nauto_unlock_approvals = 0");
     let w = sb.witness();
     let out = sb.run(&["once"], &touch(&w), "1", "rule=rm -rf risk=danger");
     assert!(!w.exists(), "a blocked block ran in auto:\n{}", String::from_utf8_lossy(&out.stdout));
@@ -138,7 +138,7 @@ fn a_block_never_runs_in_auto_mode() {
 #[test]
 fn a_gate_error_never_runs_in_auto_mode() {
     let sb = Sandbox::new("autoerr");
-    sb.config("mode = auto");
+    sb.config("mode = auto\nauto_unlock_approvals = 0");
     let w = sb.witness();
     for (code, err) in [("2", ""), ("7", ""), ("", "gate crashed")] {
         let out = sb.run(&["once"], &touch(&w), code, err);
@@ -152,7 +152,7 @@ fn hold_rules_turns_a_pass_into_a_hold_in_auto_mode() {
     // The gate says safe. The human said "rm always needs a tap." The human
     // wins, and the block does not run.
     let sb = Sandbox::new("holdrule");
-    sb.config("mode = auto\nhold_rules = rm");
+    sb.config("mode = auto\nauto_unlock_approvals = 0\nhold_rules = rm");
     let w = sb.witness();
     let out = sb.run(&["once"], &touch(&w), "0", "watch=rm");
     let stdout = String::from_utf8_lossy(&out.stdout);
@@ -166,7 +166,7 @@ fn a_rule_name_also_matches_hold_rules() {
     // Names come from both `rule=` and `watch=`; the human should not have to
     // know which table the gate took the name from.
     let sb = Sandbox::new("holdrule2");
-    sb.config("mode = auto\nhold_rules = git-clean");
+    sb.config("mode = auto\nauto_unlock_approvals = 0\nhold_rules = git-clean");
     let w = sb.witness();
     let out = sb.run(&["once"], &touch(&w), "0", "watch=git-clean");
     assert!(!w.exists(), "{}", String::from_utf8_lossy(&out.stdout));
@@ -175,7 +175,7 @@ fn a_rule_name_also_matches_hold_rules() {
 #[test]
 fn an_unrelated_name_does_not_hold() {
     let sb = Sandbox::new("nohold");
-    sb.config("mode = auto\nhold_rules = rm, mv");
+    sb.config("mode = auto\nauto_unlock_approvals = 0\nhold_rules = rm, mv");
     let w = sb.witness();
     let out = sb.run(&["once"], &touch(&w), "0", "watch=sed-i");
     assert!(w.exists(), "an unrelated watch name held the block:\n{}", String::from_utf8_lossy(&out.stdout));
@@ -185,7 +185,7 @@ fn an_unrelated_name_does_not_hold() {
 fn hold_rules_cannot_escalate_or_de_escalate_a_block() {
     // Naming a rule in hold_rules must not turn a danger into a hold.
     let sb = Sandbox::new("nodescalate");
-    sb.config("mode = auto\nhold_rules = rm");
+    sb.config("mode = auto\nauto_unlock_approvals = 0\nhold_rules = rm");
     let w = sb.witness();
     let out = sb.run(&["once"], &touch(&w), "1", "rule=rm risk=danger\nwatch=rm");
     assert!(!w.exists(), "{}", String::from_utf8_lossy(&out.stdout));
@@ -195,7 +195,7 @@ fn hold_rules_cannot_escalate_or_de_escalate_a_block() {
 #[test]
 fn a_block_only_sees_env_allow() {
     let sb = Sandbox::new("env");
-    sb.config("mode = auto");
+    sb.config("mode = auto\nauto_unlock_approvals = 0");
     let w = sb.witness();
     let text = format!(
         "set +H\necho \"${{LEAKY_TOKEN:-unset}}\" > {}\n",
@@ -213,7 +213,7 @@ fn a_block_only_sees_env_allow() {
 #[test]
 fn a_block_sees_the_in_block_marker() {
     let sb = Sandbox::new("marker");
-    sb.config("mode = auto");
+    sb.config("mode = auto\nauto_unlock_approvals = 0");
     let w = sb.witness();
     let text = format!(
         "set +H\necho \"${{TGW_IN_BLOCK:-unset}}\" > {}\n",
@@ -226,7 +226,7 @@ fn a_block_sees_the_in_block_marker() {
 #[test]
 fn a_failing_run_is_recorded_as_a_hold_not_a_success() {
     let sb = Sandbox::new("failrun");
-    sb.config("mode = auto");
+    sb.config("mode = auto\nauto_unlock_approvals = 0");
     let out = sb.run(&["once"], "set +H\nexit 9\n", "0", "");
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("hold"), "a failed run was reported as success:\n{stdout}");
@@ -236,7 +236,7 @@ fn a_failing_run_is_recorded_as_a_hold_not_a_success() {
 #[test]
 fn a_timed_out_run_is_reported_as_a_hold() {
     let sb = Sandbox::new("timeout");
-    sb.config("mode = auto\ntimeout_s = 1");
+    sb.config("mode = auto\nauto_unlock_approvals = 0\ntimeout_s = 1");
     let out = sb.run(&["once"], "set +H\nsleep 30\n", "0", "");
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("timed out"), "{stdout}");
@@ -248,7 +248,7 @@ fn a_block_cannot_move_later_blocks() {
     let cwdfile = sb.dir.join("cwd");
     std::fs::write(&cwdfile, "/tmp\n").unwrap();
     sb.config(&format!(
-        "mode = auto\ncwd_mode = file\ncwd_file = {}",
+        "mode = auto\nauto_unlock_approvals = 0\ncwd_mode = file\ncwd_file = {}",
         cwdfile.display()
     ));
     let w = sb.witness();
@@ -273,7 +273,7 @@ fn a_block_cannot_move_later_blocks() {
 #[test]
 fn output_over_the_cap_is_marked_in_the_log() {
     let sb = Sandbox::new("cap");
-    sb.config("mode = auto\nmax_output_bytes = 64");
+    sb.config("mode = auto\nauto_unlock_approvals = 0\nmax_output_bytes = 64");
     sb.run(
         &["once"],
         "set +H\ni=0; while [ $i -lt 500 ]; do echo 0123456789; i=$((i+1)); done\n",
@@ -293,7 +293,7 @@ fn cwd_file_rereads_between_blocks() {
     let cwdfile = sb.dir.join("cwd");
     std::fs::write(&cwdfile, format!("{}\n", a.display())).unwrap();
     sb.config(&format!(
-        "mode = auto\ncwd_mode = file\ncwd_file = {}",
+        "mode = auto\nauto_unlock_approvals = 0\ncwd_mode = file\ncwd_file = {}",
         cwdfile.display()
     ));
 

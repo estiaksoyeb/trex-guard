@@ -16,7 +16,7 @@ Every claim below is either implemented code, a decision recorded in
 
 ## 1. The project in one paragraph
 
-`trex-guard` is three binaries in one repository:
+`trex-guard` is four binaries in one repository:
 
 - **`tg`** — TREX Guard, a frozen C++17 PTY paste-safety firewall. It
   intercepts pasted shell text *before* it reaches the shell and halts
@@ -27,8 +27,14 @@ Every claim below is either implemented code, a decision recorded in
 - **`tcx`** — TREX ConteXt, a Rust binary that keeps AI-assisted context
   *outside* the repository: decisions, gotchas, open questions, and a shallow
   annotated map of the tree. Sources in `crates/tcx/`, built by Cargo.
+- **`tgw`** — TREX Guard Watchdog, a `std`-only Rust binary that watches the
+  clipboard and gates each block through `tgr --check` before running it,
+  holding it, or refusing it. It never classifies risk itself and never writes
+  to the clipboard. Sources in `crates/tgw/`, built by Cargo. See
+  `docs/tgw.md`.
 
 They share a repository and almost nothing else. That is deliberate (see §8.1).
+`tgw` depends on `tgr` at runtime only: it executes whatever `gate_cmd` names.
 
 The guards and `tcx` are not two halves of one feature. A guard protects the
 terminal from a bad paste. `tcx` answers "what should a new chat know before it
@@ -249,7 +255,7 @@ Three rules follow from this, and each one has a reason:
 | Rule | Why |
 | --- | --- |
 | The repo must not be polluted | The human works in worktrees and clones; a `.ai/` folder in the repo goes stale per checkout and pollutes diffs. Existing `.ai/` dirs are an *import source*, never a destination. |
-| Never *write* `~/.config/trex-guard` | That is the live guard config, shared read-only by `tg` and `tgr`. A third tool editing it can corrupt the guards. |
+| Never *write* `~/.config/trex-guard` | That is the live guard config, shared read-only by `tg` and `tgr`. A third tool editing it can corrupt the guards. `tgw` never reads it either. |
 | `TCX_HOME` exists | Termux and a proot/chroot have different `HOME`s, which would silently create two stores. One absolute path fixes that. On this machine all three XDG vars are unset, so the fallback is the normal path, not an edge case. |
 
 ### Project identity
@@ -365,6 +371,16 @@ tcx import   import an existing .ai/ directory (never modifies it)
 tcx fresh    prompt with ## Project filled from this repo
 tcx resume   fresh plus what previous sessions learned
 tcx map      shallow tree annotated with directory notes
+
+tgw run      watch the clipboard until stopped
+tgw once     one iteration, for testing
+tgw approve  re-check and run a held block
+tgw deny     discard a held block
+tgw status   mode, auto-lock state, pending holds
+tgw log      recent verdicts
+tgw doctor   prove clipboard, gate and notify work
+tgw check-config  validate watch.ini
+tgw cd       write the cwd used by cwd_mode = file
 ```
 
 Flags not shown above, all discoverable with `tcx <command> --help`, all checked
@@ -699,6 +715,7 @@ cargo test                              # tcx and tgr
 cargo test -p tcx                       # tcx alone (147 tests, fast)
 cargo test -p tgr --lib --test cpp_suite --test pty_e2e   # tgr, skipping parity
 cargo build --release -p tgr            # target/release/tgr
+cargo build --release -p tgw            # target/release/tgw
 ```
 
 **The order matters.** `cargo test` runs the two `tgr` parity tests, which drive

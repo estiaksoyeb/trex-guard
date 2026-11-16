@@ -637,3 +637,80 @@ looked for: `tcx find help` printed the help page instead of searching, because
 `tests/help.rs` asserts the word is searchable. The unit test that had pinned
 the old behaviour was updated — it had encoded the bug.
 
+## tgw: the watchdog
+
+`tgw` came after `tgr`, because it needs `tgr --check` to exist before it can
+gate without a terminal. It was built in slices, each committed and tested
+before the next, and each slice's safety property is tested by breaking it on
+purpose and watching the test fail.
+
+### Slices, and what each one cost
+
+| Slice | What | Tests |
+| --- | --- | --- |
+| 1 | `watch.ini`, the help table, drift tests | 21 lib, 9 config, 8 help |
+| 2-3 | clipboard, staging, the gate mapping | 52 lib, 12 pipeline |
+| 4 | execution, `hold_rules`, `tgw cd` | 19 execute |
+| 5 | holds, approve, deny, the auto lock | 15 hold |
+| 6 | doctor, single instance, signals | 10 doctor |
+| 7 | `docs/tgw.md` | (docs) |
+
+### Bugs the slices themselves produced
+
+A slice is not done when it compiles. Each of these was found by a test or by
+using the thing:
+
+- **The clipboard read could hang forever.** The deadline was checked after a
+  blocking `read`, which never returns if the tool never writes. `std` cannot
+  set a read timeout on a pipe, so the read moved to a thread and the deadline
+  is enforced from outside it.
+- **Killing the gate did not kill its children.** `sh -c 'something; sleep 30'`
+  survived `child.kill()`, kept the stderr pipe open, and the timeout looked
+  like a 30-second hang. The gate now runs in its own session and a timeout
+  kills the group. This is the same reason `run_block` does it.
+- **A restart re-staged every block.** Ids come from the content hash, so a
+  watchdog restarted with the clipboard unchanged hit `File exists`. A `.seen`
+  marker makes the second sight a duplicate instead of a failure.
+- **A passing block threw away its watch names.** `GateResult::Pass` had no
+  reason, so `hold_rules` could never match — the one case the name mapping
+  exists for. `Pass` carries the names now.
+- **`doctor` called a warning a failure, twice.** The `auto` lock was reported
+  as a state-dir problem and again as a warning. The lock is a warning; `run`
+  refuses separately.
+- **`doctor` never checked `hold_rules`.** It appended `--list-rules` to
+  `gate_cmd`, but `tgr` rejects `--check` with `--list-rules`, so the check
+  could never pass. The checking flags are now dropped before asking.
+- **`wakelock_cmd` was documented but never started.** The doc claimed it was
+  "started and released around a run". It is now, with a test for the timeout
+  path, because a doc that promises an unimplemented behaviour is worse than
+  no doc.
+- **`tgw once` ran in locked `auto`.** Found by pointing `once` at a locked
+  config and watching it run a block. `once` is documented as the same pipeline
+  as `run`, so it has to honour the same lock; otherwise it is a quiet bypass
+  of the one thing standing between a fresh install and unattended execution.
+  Both entry points now share one lock check.
+
+### A bug in tgr, found while validating tgw
+
+The full workspace run failed in `check_parity`: `adb uninstall` was danger by
+paste and safe by `--check`. Driving the paste path by hand showed `HIGH RISK:
+adb uninstall`, so `--check` was not wrong.
+
+The cause was in the test: both comparison tests run concurrently and shared
+one temp path, so one read the other's block. Fixed with a unique file per
+call and run three times to tell a race fix from a flake.
+
+That the test was racy matters beyond tidiness. It is the proof that `--check`
+reads the same config as the paste path, and `tgw` trusts `--check` for every
+block it runs.
+
+### What was deliberately not built
+
+- **`mode = auto` for a fresh install.** It is locked behind 20 approvals.
+  Auto is what makes `tgw` convenient, which is exactly why it should be
+  earned rather than assumed.
+- **Any flag that skips the gate.** There is no such flag and there will not be
+  one. `dry` exists to run nothing, not to run ungated.
+- **A clipboard write from `tgw`.** The block writes its own output. A
+  watchdog writing to the clipboard would be a second source of truth about
+  what the human is about to paste.

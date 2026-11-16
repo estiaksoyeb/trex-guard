@@ -157,18 +157,8 @@ fn cmd_run(rest: &[String]) -> i32 {
     if let Some(ms) = interval {
         cfg.poll_ms = ms;
     }
-    if cfg.mode == config::Mode::Auto {
-        let (unlocked, need) = holds::auto_lock(&cfg.state_dir(), &cfg);
-        if !unlocked {
-            eprintln!(
-                "tgw: mode=auto is locked: {} more approval(s) needed ({} of {}).",
-                need,
-                holds::approvals(&cfg.state_dir()),
-                cfg.auto_unlock_approvals
-            );
-            eprintln!("Approve that many holds, or set mode=confirm.");
-            return 2;
-        }
+    if let Err(code) = auto_lock_gate(&cfg) {
+        return code;
     }
 
     // The whole loop runs through the same `process_once` as `tgw once`, so
@@ -232,6 +222,11 @@ fn cmd_once(rest: &[String]) -> i32 {
     let Some(cfg) = load_config() else {
         return 2;
     };
+    // `once` is the same pipeline as `run`, so it must honour the same lock.
+    // Otherwise it is a quiet way to run in `auto` before it is unlocked.
+    if let Err(code) = auto_lock_gate(&cfg) {
+        return code;
+    }
     let mut seen = Seen::new(16);
     let mut ctx = Context {
         cfg: &cfg,
@@ -243,6 +238,28 @@ fn cmd_once(rest: &[String]) -> i32 {
         return 1;
     }
     report_once(&mut ctx)
+}
+
+/// Refuses to run with `mode = auto` while the approval lock is closed.
+///
+/// One function for every entry point that can run a block, so a new command
+/// cannot forget it.
+fn auto_lock_gate(cfg: &config::Config) -> Result<(), i32> {
+    if cfg.mode != config::Mode::Auto {
+        return Ok(());
+    }
+    let (unlocked, need) = holds::auto_lock(&cfg.state_dir(), cfg);
+    if unlocked {
+        return Ok(());
+    }
+    eprintln!(
+        "tgw: mode=auto is locked: {} more approval(s) needed ({} of {}).",
+        need,
+        holds::approvals(&cfg.state_dir()),
+        cfg.auto_unlock_approvals
+    );
+    eprintln!("Approve that many holds, or set mode=confirm.");
+    Err(2)
 }
 
 /// Prints what happened, for `once`.
