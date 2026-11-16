@@ -22,6 +22,7 @@
 use std::path::PathBuf;
 
 use crate::risk::Risk;
+use crate::watch::WatchRule;
 
 /// A rule from `[custom_rules]`: `name | risk | pattern | explanation`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,6 +45,11 @@ pub struct Config {
     pub allowlist: Vec<String>,
     pub disabled_rules: std::collections::HashSet<String>,
     pub custom_rules: Vec<CustomRule>,
+    /// `[watch-rules]` additions: rules that `--check` reports by name only.
+    /// `tg` ignores this section; see [`crate::watch`].
+    pub watch_rules: Vec<WatchRule>,
+    /// `[watch-rules]` `disable = name` lines: defaults switched off.
+    pub disabled_watch_rules: std::collections::HashSet<String>,
 }
 
 impl Default for Config {
@@ -54,6 +60,8 @@ impl Default for Config {
             allowlist: Vec::new(),
             disabled_rules: std::collections::HashSet::new(),
             custom_rules: Vec::new(),
+            watch_rules: Vec::new(),
+            disabled_watch_rules: std::collections::HashSet::new(),
         }
     }
 }
@@ -145,6 +153,27 @@ pub fn parse(content: &str) -> Config {
                         risk,
                         pattern: parts[2].to_string(),
                         explanation: parts.get(3).map(|s| s.to_string()).unwrap_or_default(),
+                    });
+                }
+            }
+            // Reported by `--check` only; never consulted by the paste path.
+            // `name | pattern` adds, `disable = name` switches a default off.
+            "watch-rules" | "watch_rules" => {
+                if let Some(pos) = line.find('=') {
+                    let key = line[..pos].trim().to_lowercase();
+                    if key == "disable" {
+                        let name = line[pos + 1..].trim();
+                        if !name.is_empty() {
+                            cfg.disabled_watch_rules.insert(name.to_string());
+                        }
+                        continue;
+                    }
+                }
+                let parts: Vec<&str> = line.split('|').map(str::trim).collect();
+                if parts.len() >= 2 && !parts[0].is_empty() {
+                    cfg.watch_rules.push(WatchRule {
+                        name: parts[0].to_string(),
+                        pattern: parts[1].to_string(),
                     });
                 }
             }

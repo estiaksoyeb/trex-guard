@@ -47,6 +47,7 @@ pub fn terminated() -> bool {
 pub mod risk;
 pub mod rules;
 pub mod shell;
+pub mod watch;
 
 pub use config::Config;
 pub use risk::{Match, Risk};

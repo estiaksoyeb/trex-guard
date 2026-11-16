@@ -72,6 +72,58 @@ piping `/dev/zero` gets an error rather than an out-of-memory.
 because there is no human to wait for. That is the only divergence, and it is
 I/O, not classification.
 
+## Watch rules: named, but risk-free
+
+`tgr` carries a second table of rules that `--check` reports and the paste path
+never sees. They exist for one caller, the `tgw` watchdog: it wants `sed -i`,
+`git reset`, `rm` and friends to need a human, but the terminal must not start
+holding those pastes.
+
+| Where | Sees watch rules | Effect |
+| --- | --- | --- |
+| `tgr` pasting | no — the module is not called | none |
+| `tg` | no such concept | none |
+| `tgr --check` | yes | one `watch=<name>` line on stderr |
+
+They carry **no risk**. A watch match cannot raise a verdict and cannot change
+an exit code; `--check` reports the name alongside its normal answer.
+
+This is the one place `tgr` has a concept the C++ guard lacks. It is safe
+precisely because `tg` has no `--check`: there is no code path where the two
+can disagree, and `tests/watch_rules.rs` proves the paste output is
+byte-identical with the rules present and with every one of them disabled.
+
+### Names are an interface
+
+`hold_rules` in `tgw`'s `watch.ini` matches these names, so renaming one
+silently drops whatever hold depended on it. `tgr --list-rules` prints them and
+is the source of truth; `tgw doctor` validates against it.
+
+A rule whose pattern does not compile is printed as `name<TAB>BROKEN` and
+reported on stderr. It is never silently dropped: a hold that cannot match is
+exactly the failure this is meant to make visible.
+
+### Defaults and how to change them
+
+Compiled in, so a fresh install works with no file edited:
+
+`sed-i`, `git-reset`, `git-checkout`, `git-clean`, `git-restore`, `rm`, `mv`,
+`chmod`, `chown`, `dd`, `redirect-outside-tmp`.
+
+`[watch-rules]` in `config.ini` adds a rule or switches a default off. `tg`
+ignores the section, as it ignores every section it does not know:
+
+```ini
+[watch-rules]
+kubectl-delete | \bkubectl\s+delete\b
+disable = mv
+```
+
+Patterns are regexes over the raw paste, anchored at a command word so
+`echo rm -i` does not match. They are not a shell parser: a false positive
+costs one hold prompt, and a false negative is covered by the ordinary risk
+rules, which still run.
+
 ## What is deliberately different
 ### 1. Sessions cannot be confused with each other
 
@@ -159,6 +211,7 @@ tgr                 # guarded shell
 tgr <command> ...   # run one command under the guard
 tgr --check FILE    # classify FILE and exit (no shell)
 tgr --check -       # classify stdin
+tgr --list-rules    # print every watch-rule name
 tgr --help
 tgr --version
 ```

@@ -84,6 +84,7 @@ Usage:
   tgr <command>     Run a command under the guard
   tgr --check FILE  Classify FILE and exit (no shell, no guard)
   tgr --check -     Classify text read from stdin
+  tgr --list-rules  Print every watch-rule name, one per line
   tgr --help        Show this help message
   tgr --version     Show version ({VERSION})
 
@@ -309,6 +310,16 @@ fn run_check(arg: Result<&str, &'static str>) -> i32 {
     }
     eprint!("{}", report_rules(&verdict.matched));
 
+    // Watch rules report a name and nothing else. They cannot change the
+    // exit code: see `crate::watch`.
+    for name in tgr::watch::matches(&config, &text) {
+        eprintln!("watch={name}");
+    }
+    let (_, broken) = tgr::watch::compile(&config);
+    for b in &broken {
+        eprintln!("tgr: watch rule `{}` does not compile ({}); it cannot match", b.name, b.message);
+    }
+
     // Mirror the PTY path: a rule that could not run holds the paste, so the
     // caller must not treat it as safe merely because nothing matched.
     if verdict.has_problems() {
@@ -317,8 +328,34 @@ fn run_check(arg: Result<&str, &'static str>) -> i32 {
     check_exit(&verdict.matched)
 }
 
+/// Runs `--list-rules`: every watch-rule name in effect, one per line.
+///
+/// This is the source of truth `tgw` validates `hold_rules` against, so it
+/// prints names only — a caller parses lines, not prose. A rule that does not
+/// compile is marked, because it will never match and a hold that depends on
+/// it would silently never happen.
+fn run_list_rules() -> i32 {
+    let config = tgr::config::load(None);
+    let (ok, broken) = tgr::watch::compile(&config);
+    let broken_names: Vec<String> = broken.iter().map(|b| b.name.clone()).collect();
+    for (name, _) in &ok {
+        println!("{name}");
+    }
+    for name in &broken_names {
+        println!("{name}\tBROKEN");
+    }
+    for b in &broken {
+        eprintln!("tgr: watch rule `{}` does not compile: {}", b.name, b.message);
+    }
+    if ok.is_empty() { 1 } else { 0 }
+}
+
 fn main() {
     let argv: Vec<String> = std::env::args().skip(1).collect();
+
+    if argv.first().map(String::as_str) == Some("--list-rules") && argv.len() == 1 {
+        std::process::exit(run_list_rules());
+    }
 
     if let Some(arg) = check_arg(&argv) {
         std::process::exit(run_check(arg));
@@ -424,6 +461,7 @@ mod tests {
             "TGR_ACTIVE",
             "--check FILE",
             "--check -",
+            "--list-rules",
         ] {
             assert!(text.contains(needle), "help does not mention {needle:?}");
         }
