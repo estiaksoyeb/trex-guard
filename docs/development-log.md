@@ -1,5 +1,16 @@
 # Development Log
 
+## 2026-11-16 — dropped `tcx-trial`
+
+The tally helper for the rejected 5-session trial is gone: `scripts/tcx-trial`,
+its CMake install line, and the "Running the trial" section of `docs/tcx.md`.
+It installed a third command for a purpose the user had already refused, and
+left a dead entry point on every machine.
+
+`docs/workflow.md` keeps the lesson and now says explicitly not to rebuild it.
+
+Entry points are now two: `tg` (guard) and `tcx` (context).
+
 ## 2026-11-16 — per-command help, and a test that catches help drift
 
 `tcx <command> --help` did not exist: every command answered `--help` with

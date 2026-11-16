@@ -41,10 +41,6 @@ install(PROGRAMS scripts/tcx
     DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
-install(PROGRAMS scripts/tcx-trial
-    DESTINATION ${CMAKE_INSTALL_BINDIR}
-)
-
 install(FILES
     examples/config.ini
     scripts/shell-integration.bash

@@ -127,9 +127,10 @@ The AI writes it; the human only runs blocks that already exist.
 
 ### 2. Invented a measurement ritual
 
-A "5-session trial" was proposed: count orientation turns, log with
-`tcx-trial log control 4`, compare averages. The user's answer, correctly: they
-would know within a week of ordinary use, and the ritual is busywork.
+A "5-session trial" was proposed: count orientation turns, log them in a tally
+script, compare averages. The user's answer, correctly: they would know within a
+week of ordinary use, and the ritual is busywork. The script was later deleted;
+do not rebuild it.
 
 Rule: **do not invent experiments to validate something daily use answers for
 free.** If a tool is used every day, ship it and let use be the test.

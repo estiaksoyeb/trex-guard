@@ -377,33 +377,11 @@ only reads a small notes file and three `git` invocations.
 Timeboxed to 5 sessions. If `note` + `prime` alone do not win, the indexer was
 never going to win either.
 
-### Running the trial
+### How this was settled
 
-Setup is one time; `scripts/tcx-integration.bash` is sourced from `~/.bashrc`
-and sets `TCX_HOME` so Termux and a chroot cannot split the store.
-
-```bash
-tcx-trial log control 4      # what you do now: prompt + .ai/INDEX.md
-tcx-trial log treatment 2    # prompt + `tcx prime` output
-tcx-trial show               # averages + verdict
-tcx-trial reset
-```
-
-Recording rules:
-
-- **Log immediately** after the session. Memory drifts within a day.
-- **Count honestly.** An orientation turn is a round trip that exists only to
-  locate things: "where does X live", "show me the files", "what does this
-  function do". It is *not* a turn spent designing or discussing.
-- **Interleave the arms** (control, treatment, control, treatment) rather than
-  doing all of one then all of the other. Learning effects are the main
-  confounder: by session 4 you know the repo better regardless of the tool.
-- **Use at least one repo you do not already know well.** A repo you can
-  navigate from memory will show no difference.
-
-Verdict bands: treatment ahead by >= 0.5 turn wins; behind by >= 0.5 loses; a
-gap under half a turn is "no meaningful difference", which means keep `prime`
-and **skip** the indexer.
+The trial was never run, and the tally helper for it was removed. Daily use
+answers the question for free; a counting ritual adds a measurement step to a
+workflow whose whole point is that the human only pastes.
 
 ## 11. Freshness (deferred until the index exists)
 
@@ -523,9 +501,6 @@ team sync, "other guards on the PTY layer", renaming `tg`, seam patterns,
 | `tests/find_import.rs` | 18 | `find`, keyword scoping, `import`, dedupe, source immutability |
 | `tests/wrapper.rs` | 3 | launcher resolution, no self-recursion |
 
-Not covered by `cargo test`: `scripts/tcx-trial`. It is a shell tally
-helper, verified by hand (log, show, reset, and both validation errors).
-
 ### Test matrix for `tcx id` (all passing)
 
 | Case | Assertion |
@@ -633,9 +608,6 @@ What it does:
 - Sets `TCX_HOME` to `$HOME/.local/share/tcx-home` **only if unset**. This is
   the fix for the Termux/chroot split: one canonical store instead of two.
 - Defines `tcx-clip`, which pipes `tcx prime` into `clip`, when `clip` exists.
-
-`scripts/tcx-trial` records the gate's measurements. Its log defaults to
-`$TCX_HOME/trial.log`, outside the repo, so trial data is never committed.
 
 Verified behaviours (`tests/wrapper.rs` plus smoke tests):
 
