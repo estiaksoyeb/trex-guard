@@ -240,6 +240,26 @@ fn outcome_from_gate(
 
     let _ = ctx.log.keep_block(&staged.id, text);
 
+    // 8. A hold becomes a record the human can approve or deny. `dry` records
+    //    one too, so the human can see exactly what *would* have run; approval
+    //    of a dry-mode hold is refused by `holds::verify`.
+    if verdict == Verdict::Hold {
+        let hold = crate::holds::Hold {
+            id: staged.id.clone(),
+            hash: staged.hash,
+            reason: reason.clone(),
+            expires: crate::log::now_unix() + ctx.cfg.hold_ttl_s,
+            file: staged
+                .path
+                .strip_prefix(ctx.cfg.state_dir())
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_else(|_| staged.path.to_string_lossy().into_owned()),
+            mode: ctx.cfg.mode,
+            created: crate::log::now_unix(),
+        };
+        let _ = crate::holds::save(&ctx.cfg.state_dir(), &hold);
+    }
+
     Outcome {
         verdict,
         reason,

@@ -28,6 +28,7 @@
 //! | [`clip`] | reading the clipboard, validating, hashing, staging |
 //! | [`execute`] | running an approved block: env, cwd, timeout, output cap |
 //! | [`gate`] | running `tgr --check` and mapping its exit code |
+//! | [`holds`] | hold records, the re-check on approval, the `auto` lock |
 //! | [`log`] | the event log and kept block copies |
 //! | [`pipeline`] | the one ordered path from clipboard to verdict |
 //!
@@ -38,6 +39,7 @@ pub mod clip;
 pub mod config;
 pub mod execute;
 pub mod gate;
+pub mod holds;
 pub mod help;
 pub mod log;
 pub mod pipeline;
