@@ -1,0 +1,17 @@
+[package]
+name = "tgw"
+description = "TREX Guard Watchdog - gate clipboard blocks through tgr and run them"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "tgw"
+path = "src/lib.rs"
+
+[[bin]]
+name = "tgw"
+path = "src/main.rs"
+
+[dependencies]
