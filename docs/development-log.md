@@ -1,14 +1,26 @@
 # Development Log
 
+## 2026-11-16 — config-only prompt, no clipboard coupling
+
+Two corrections to the `fresh`/`resume` slice.
+
+- **The prompt is read only from the config directory** (`$TCX_HOME/config/prompt.md`
+  or `~/.config/tcx/prompt.md`), never from the repository. The earlier order let
+  a checkout's `.tg/prompt.md` override the user's rules, which is the wrong
+  direction of trust. The shipped `.tg/prompt.md` was removed.
+- **Nothing is hardcoded to `clip`.** `tg fresh` and `tg resume` print to
+  stdout; `tg fresh | clip` is the user's choice at the shell. Confirmed by
+  grepping the crate: the only occurrence was a comment.
+
 ## 2026-11-16 — `tg fresh` and `tg resume`
 
 The two commands that start and resume a chat now exist, as `tcx fresh` and
 `tcx resume`, reached through `tg`. The guard never starts a shell for them;
 `scripts/tg` forwards them before the recursive-wrap check.
 
-- Prompt text is a file, not a binary constant: `<repo>/.tg/prompt.md`, then
-  `<repo>/prompt.md`, then `$TCX_HOME/config/prompt.md`, then
-  `<config>/tcx/prompt.md`. Editing rules never needs a rebuild.
+- Prompt text is a file, not a binary constant. (Initially looked up in the
+  repo first; corrected the same day to config-only - see the entry above.)
+  Editing rules never needs a rebuild.
 - `## Project` is filled by **reading** manifests (Cargo, Gradle, CMake, npm,
   pyproject, go.mod) - no build system is executed. Verified against `mpvRex`,
   which yields `xyz.mpv.rex`, `app/src/main/kotlin/xyz/mpv/rex/`,

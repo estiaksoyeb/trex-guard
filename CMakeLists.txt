@@ -49,7 +49,6 @@ install(FILES
     examples/config.ini
     scripts/shell-integration.bash
     scripts/tcx-integration.bash
-    .tg/prompt.md
     DESTINATION ${CMAKE_INSTALL_DATADIR}/trex-guard
 )
 

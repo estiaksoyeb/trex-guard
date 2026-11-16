@@ -545,11 +545,8 @@ fn run_briefing(mode: briefing::Mode, args: &[String]) -> ExitCode {
     };
     project.print_adoption();
 
-    let (template_text, template_path) = match briefing::template(
-        &project.identity.root,
-        &project.store,
-        template.as_deref(),
-    ) {
+    let (template_text, template_path) =
+        match briefing::template(&project.store, template.as_deref()) {
         Ok(found) => found,
         Err(e) => {
             eprintln!("tcx {command}: {e}");
@@ -602,9 +599,9 @@ fn print_help() {
          import  Import an existing .ai/ directory (never modifies it)\n  \
          fresh   Print the prompt with ## Project filled in from this repo\n  \
          resume  As fresh, plus what previous sessions learned\n\n\
-         Template lookup (first found wins):\n  \
-         --template FILE, <repo>/.tg/prompt.md, <repo>/prompt.md,\n  \
-         $TCX_HOME/config/prompt.md, <config>/tcx/prompt.md\n\n\
+         Template (never read from the repository):\n  \
+         --template FILE, else $TCX_HOME/config/prompt.md,\n  \
+         else <config>/tcx/prompt.md (i.e. ~/.config/tcx/prompt.md)\n\n\
          Environment:\n  \
          TCX_HOME   Single root containing data/, cache/ and config/\n  \
          XDG_DATA_HOME, XDG_CACHE_HOME, XDG_CONFIG_HOME\n              \

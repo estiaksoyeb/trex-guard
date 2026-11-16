@@ -85,9 +85,15 @@ Both are run **once per chat**, then pasted. That is the whole interaction.
 ### `tg fresh` - start a session
 
 Implemented: `tcx fresh`, reached through `tg fresh` (the guard never starts a
-shell for it). The prompt text lives in `~/.local/share/tcx-home/config/prompt.md`
-(or `<repo>/.tg/prompt.md` to pin one repository); edit the file, no rebuild.
-The path used is printed on stderr, so `tg fresh | clip` copies only the prompt.
+shell for it). The prompt text lives in your config directory only:
+`~/.config/tcx/prompt.md`, or `$TCX_HOME/config/prompt.md` when `TCX_HOME` is
+set (it is on this machine, so
+`~/.local/share/tcx-home/config/prompt.md`). Edit the file, no rebuild. Nothing
+in a repository can override it.
+
+The command prints to the terminal and never calls a clipboard tool itself.
+`tg fresh | clip` is a choice you make at the shell, not something the program
+assumes. The template path is printed on stderr, so it never lands in a paste.
 
 It prints the workflow prompt with the `## Project` section already filled in
 from the repository the user is standing in:

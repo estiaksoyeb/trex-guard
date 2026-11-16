@@ -13,14 +13,13 @@
 //!
 //! # Location of the template
 //!
-//! Precedence, which lets a repository pin its own prompt without changing the
-//! user's global one:
+//! The template lives in *your* config directory, never in the repository, so
+//! a checkout cannot change the rules an AI is given:
 //!
 //! 1. the `template` argument, when the caller passes one
-//! 2. `<repo>/.tg/prompt.md`
-//! 3. `<repo>/prompt.md`
-//! 4. `$TCX_HOME/config/prompt.md`
-//! 5. `<config>/tcx/prompt.md`
+//! 2. `$TCX_HOME/config/prompt.md`, or `<config>/tcx/prompt.md`
+//!
+//! Nothing is read from the repository itself.
 //!
 //! # Security
 //!
@@ -96,16 +95,17 @@ impl Default for Options {
 ///
 /// Returns the template text and the path it came from, so the caller can
 /// report where the rules being applied live.
-pub fn template(repo_root: &Path, store: &Store, explicit: Option<&Path>) -> Result<(String, PathBuf), Error> {
-    let mut candidates: Vec<PathBuf> = Vec::new();
-    if let Some(path) = explicit {
-        candidates.push(path.to_path_buf());
-    } else {
-        candidates.push(repo_root.join(".tg").join("prompt.md"));
-        candidates.push(repo_root.join("prompt.md"));
-        candidates.push(store.config.join("prompt.md"));
-        candidates.push(store.config.join("tg").join("prompt.md"));
-    }
+///
+/// The search never looks inside the repository. An explicit path is used as
+/// given; otherwise only the config directory is consulted.
+pub fn template(store: &Store, explicit: Option<&Path>) -> Result<(String, PathBuf), Error> {
+    let candidates: Vec<PathBuf> = match explicit {
+        Some(path) => vec![path.to_path_buf()],
+        None => vec![
+            store.config.join("prompt.md"),
+            store.config.join("tg").join("prompt.md"),
+        ],
+    };
 
     for path in &candidates {
         match fs::read_to_string(path) {
@@ -114,8 +114,6 @@ pub fn template(repo_root: &Path, store: &Store, explicit: Option<&Path>) -> Res
             Err(e) => return Err(Error::Io(path.clone(), e)),
         }
     }
-    // An explicit path that does not exist is reported as "not found", not as
-    // a bare list of defaults, which would be misleading.
     Err(Error::NoTemplate(candidates))
 }
 

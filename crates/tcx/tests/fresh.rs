@@ -94,15 +94,20 @@ fn cargo_repo(tag: &str) -> Temp {
         "[package]\nname = \"demo\"\nversion = \"0.1.0\"\ndescription = \"a demo\"\n",
     );
     write(temp.path(), "src/main.rs", "fn main() {}\n");
-    write(temp.path(), "prompt.md", TEMPLATE);
     init_repo(temp.path());
     temp
+}
+
+/// Writes the template where `tg fresh` looks: the config directory.
+fn config_template(home: &Path) {
+    write(home, "config/prompt.md", TEMPLATE);
 }
 
 #[test]
 fn fresh_fills_the_project_section_from_cargo() {
     let repo = cargo_repo("cargo");
     let home = Temp::new("home");
+    config_template(home.path());
 
     let (stdout, stderr, code) = run(home.path(), repo.path(), &["fresh"]);
 
@@ -146,9 +151,9 @@ fn fresh_fills_an_android_gradle_project() {
         "core/src/main/kotlin/com/example/core/Core.kt",
         "package com.example.core\n",
     );
-    write(repo.path(), "prompt.md", TEMPLATE);
     init_repo(repo.path());
     let home = Temp::new("home");
+    config_template(home.path());
 
     let (stdout, stderr, code) = run(home.path(), repo.path(), &["fresh"]);
 
@@ -167,9 +172,7 @@ fn fresh_fills_an_android_gradle_project() {
 #[test]
 fn fresh_reports_every_template_candidate_when_missing() {
     let repo = cargo_repo("notemplate");
-    fs::remove_file(repo.path().join("prompt.md")).unwrap();
-    git(repo.path(), &["add", "-A"]);
-    git(repo.path(), &["commit", "-qm", "drop template"]);
+    // No template in the config directory either.
     let home = Temp::new("home");
 
     let (stdout, stderr, code) = run(home.path(), repo.path(), &["fresh"]);
@@ -177,38 +180,55 @@ fn fresh_reports_every_template_candidate_when_missing() {
     assert_eq!(code, 1);
     assert!(stdout.is_empty());
     assert!(stderr.contains("no prompt template found"));
-    assert!(stderr.contains(".tg/prompt.md"));
+    assert!(stderr.contains("config/prompt.md"));
 }
 
 #[test]
-fn template_lookup_prefers_the_repo_over_the_global_copy() {
-    let repo = cargo_repo("precedence");
+fn template_is_read_from_the_config_directory() {
+    let repo = cargo_repo("fromconfig");
     let home = Temp::new("home");
-    write(home.path(), "config/prompt.md", "GLOBAL\n## Project\nold\n");
+    write(home.path(), "config/prompt.md", "CONFIG\n## Project\nold\n");
+
+    let (stdout, stderr, code) = run(home.path(), repo.path(), &["fresh"]);
+
+    assert_eq!(code, 0);
+    assert!(stdout.starts_with("CONFIG"));
+    assert!(stderr.contains("config/prompt.md"));
+}
+
+#[test]
+fn a_template_in_the_repository_is_ignored() {
+    let repo = cargo_repo("repotemplate");
+    // A checkout must not be able to change the rules the AI is given.
+    write(repo.path(), "prompt.md", "REPO\n## Project\nold\n");
+    write(repo.path(), ".tg/prompt.md", "REPO-DOT-TG\n## Project\nold\n");
+    let home = Temp::new("home");
+    config_template(home.path());
 
     let (stdout, _, code) = run(home.path(), repo.path(), &["fresh"]);
 
     assert_eq!(code, 0);
-    assert!(stdout.starts_with("# Workflow"), "used global, not repo");
+    assert!(stdout.starts_with("# Workflow"), "a repo copy was used");
+    assert!(!stdout.contains("REPO"));
 }
 
 #[test]
-fn template_lookup_falls_back_to_the_global_copy() {
-    let repo = cargo_repo("globalfallback");
-    fs::remove_file(repo.path().join("prompt.md")).unwrap();
+fn a_repo_template_alone_does_not_count() {
+    let repo = cargo_repo("repoonly");
+    write(repo.path(), "prompt.md", "REPO\n## Project\nold\n");
     let home = Temp::new("home");
-    write(home.path(), "config/prompt.md", "GLOBAL\n## Project\nold\n");
 
-    let (stdout, _, code) = run(home.path(), repo.path(), &["fresh"]);
+    let (_, stderr, code) = run(home.path(), repo.path(), &["fresh"]);
 
-    assert_eq!(code, 0);
-    assert!(stdout.starts_with("GLOBAL"));
+    assert_eq!(code, 1);
+    assert!(stderr.contains("no prompt template found"));
 }
 
 #[test]
 fn explicit_template_wins() {
     let repo = cargo_repo("explicittemplate");
     let home = Temp::new("home");
+    config_template(home.path());
     write(home.path(), "mine.md", "MINE\n## Project\nold\n");
 
     let (stdout, _, code) = run(
@@ -225,6 +245,7 @@ fn explicit_template_wins() {
 fn fresh_never_mentions_notes() {
     let repo = cargo_repo("freshnonotes");
     let home = Temp::new("home");
+    config_template(home.path());
     let (_, _, code) = run(
         home.path(),
         repo.path(),
@@ -243,6 +264,7 @@ fn fresh_never_mentions_notes() {
 fn resume_appends_notes_that_fresh_does_not() {
     let repo = cargo_repo("resume");
     let home = Temp::new("home");
+    config_template(home.path());
     for (kind, text) in [
         ("gotcha", "the init order matters"),
         ("decision", "store lives outside the repo"),
@@ -271,6 +293,7 @@ fn resume_appends_notes_that_fresh_does_not() {
 fn resume_says_when_there_are_no_notes() {
     let repo = cargo_repo("resumeempty");
     let home = Temp::new("home");
+    config_template(home.path());
 
     let (stdout, _, code) = run(home.path(), repo.path(), &["resume"]);
 
@@ -283,6 +306,7 @@ fn resume_says_when_there_are_no_notes() {
 fn resume_respects_the_budget() {
     let repo = cargo_repo("budget");
     let home = Temp::new("home");
+    config_template(home.path());
     for i in 0..40 {
         let (_, _, code) = run(
             home.path(),
@@ -302,6 +326,7 @@ fn resume_respects_the_budget() {
 fn fresh_rejects_unknown_options() {
     let repo = cargo_repo("badopt");
     let home = Temp::new("home");
+    config_template(home.path());
 
     let (_, stderr, code) = run(home.path(), repo.path(), &["fresh", "--nope"]);
 

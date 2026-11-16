@@ -400,13 +400,17 @@ The prompt text lives in a file, never in the binary, because the rules change
 far more often than the tool is rebuilt. First found wins:
 
 1. `--template FILE`
-2. `<repo>/.tg/prompt.md` - lets one repository pin its own rules
-3. `<repo>/prompt.md`
-4. `$TCX_HOME/config/prompt.md`
-5. `<config>/tcx/prompt.md`
+2. `$TCX_HOME/config/prompt.md`
+3. `<config>/tcx/prompt.md` (i.e. `~/.config/tcx/prompt.md`)
 
-The path actually used is printed to **stderr**, so `tg fresh | clip` puts only
-the prompt on the clipboard.
+**The repository is never consulted.** A checkout must not be able to change
+the rules an AI is given, which is also why the template is not installed into
+the repo and no `.tg/prompt.md` is shipped. On this machine the file is
+`~/.local/share/tcx-home/config/prompt.md` because `TCX_HOME` is set.
+
+The path actually used is printed to **stderr**, and the prompt to stdout: the
+program never invokes a clipboard tool. Use `tg fresh | clip` (or any other
+sink) at the shell, because only the human knows where the text should go.
 
 ### Filling `## Project`
 
@@ -476,13 +480,13 @@ team sync, "other guards on the PTY layer", renaming `tg`, seam patterns,
 
 ## 14. Test status
 
-**112 tests passing** across eight test files plus unit tests:
+**114 tests passing** across eight test files plus unit tests:
 
 | File | Tests | Covers |
 | --- | --- | --- |
 | `src/project.rs` (unit) | 5 | `## Project` heading detection and filling, idempotence |
 | `src/briefing.rs` (unit) | 3 | fresh vs resume content |
-| `tests/fresh.rs` | 12 | `fresh`/`resume` end to end: Cargo, Gradle, template precedence, budget |
+| `tests/fresh.rs` | 13 | `fresh`/`resume` end to end: Cargo, Gradle, template precedence, budget |
 | `tests/id.rs` | 19 | every identity case in the matrix below |
 | `tests/notes.rs` | 19 | render, parse, sanitise, append, concurrency |
 | `tests/prime.rs` | 16 | stamp, golden output, ordering, budget, CSI |
@@ -520,7 +524,7 @@ helper, verified by hand (log, show, reset, and both validation errors).
 Plus CLI tests: opaque-id-first output, stable human labels, adoption preserves
 notes, exit codes, version, no-`HOME` error.
 
-Current status: **112 tests passing** (5 project + 3 briefing + 12 fresh + 19
+Current status: **114 tests passing** (5 project + 3 briefing + 12 fresh + 19
 identity + 19 notes + 16 prime + 6 CLI + 12 note/prime CLI + 17 find/import +
 3 wrapper).
 
