@@ -1,0 +1,63 @@
+#!/bin/sh
+# tcx - TREX ConteXt Launcher
+#
+# Thin wrapper so `tcx` works from a checkout without installing to PATH.
+# All behaviour lives in the Rust binary; this only locates it.
+
+set -e
+
+if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
+    echo "tcx - TREX ConteXt Launcher"
+    echo ""
+    echo "Usage:"
+    echo "  tcx id       Resolve the project identity and store path"
+    echo "  tcx note     Append a dated note"
+    echo "  tcx prime    Print a session briefing"
+    echo "  tcx find     Search notes"
+    echo "  tcx import   Import a .ai/ directory"
+    echo "  tcx --version"
+    echo ""
+    echo "See \`tcx --help\` from the binary for full options."
+    exit 0
+fi
+
+if [ "$1" = "--version" ] || [ "$1" = "-v" ]; then
+    echo "tcx (trex-guard wrapper) 0.1.0"
+    exit 0
+fi
+
+# Locate the tcx binary: PATH, then repo build directories.
+#
+# Guard against self-recursion: `command -v tcx` finds THIS script when the
+# scripts/ directory is on PATH, and exec'ing it would loop forever. Compare
+# resolved paths and only use a PATH hit if it is a different file.
+self="$0"
+case "$self" in
+    */*) ;;
+    *) self="$(command -v "$self" 2>/dev/null || true)" ;;
+esac
+self_dir="$(cd "$(dirname "$self")" 2>/dev/null && pwd || true)"
+self_path="${self_dir:-.}/$(basename "$self")"
+
+found="$(command -v tcx 2>/dev/null || true)"
+if [ -n "$found" ]; then
+    found_dir="$(cd "$(dirname "$found")" 2>/dev/null && pwd || true)"
+    found_path="${found_dir:-.}/$(basename "$found")"
+    if [ "$found_path" != "$self_path" ]; then
+        exec "$found" "$@"
+    fi
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+for candidate in \
+    "$SCRIPT_DIR/../target/release/tcx" \
+    "$SCRIPT_DIR/../target/debug/tcx"
+do
+    if [ -x "$candidate" ]; then
+        exec "$candidate" "$@"
+    fi
+done
+
+echo "Error: tcx executable not found." >&2
+echo "Build it with: cargo build --release" >&2
+exit 1

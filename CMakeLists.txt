@@ -37,9 +37,14 @@ install(PROGRAMS scripts/tg
     DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
+install(PROGRAMS scripts/tcx
+    DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
 install(FILES
     examples/config.ini
     scripts/shell-integration.bash
+    scripts/tcx-integration.bash
     DESTINATION ${CMAKE_INSTALL_DATADIR}/trex-guard
 )
 

@@ -10,3 +10,6 @@ CMakeUserPresets.json
 *.swo
 *.jpg
 *.png
+
+# Rust (tcx)
+/target/

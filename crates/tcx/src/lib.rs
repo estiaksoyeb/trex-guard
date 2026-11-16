@@ -1,0 +1,14 @@
+//! `tcx` - TREX ConteXt.
+//!
+//! Out-of-repo context store for AI-assisted development.
+//!
+//! This library is deliberately independent of the `tg` guard: the guard stays
+//! frozen C++, and nothing here is imported by it. Dependencies point one way
+//! only.
+
+pub mod find;
+pub mod id;
+pub mod import;
+pub mod notes;
+pub mod prime;
+pub mod store;

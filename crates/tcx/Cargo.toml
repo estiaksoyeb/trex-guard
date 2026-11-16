@@ -1,0 +1,17 @@
+[package]
+name = "tcx"
+description = "TREX ConteXt - out-of-repo context store for AI-assisted development"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "tcx"
+path = "src/lib.rs"
+
+[[bin]]
+name = "tcx"
+path = "src/main.rs"
+
+[dependencies]
