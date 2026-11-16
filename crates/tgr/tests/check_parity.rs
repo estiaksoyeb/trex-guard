@@ -70,9 +70,14 @@ fn paste_verdict(paste: &str) -> &'static str {
 
 /// Runs `tgr --check <file>` and maps the exit code to a verdict word.
 fn check_verdict(paste: &str) -> String {
+    // A unique file per call. The two comparison tests run concurrently in
+    // one process, so a shared path let one test read the other's block --
+    // which showed up as `--check` "disagreeing" on a paste it never saw.
+    static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     let dir = std::env::temp_dir().join(format!("tgr-check-{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("create temp dir");
-    let path = dir.join("block");
+    let path = dir.join(format!("block-{n}"));
     std::fs::write(&path, paste).expect("write block");
 
     let out = Command::new(tgr_binary())
