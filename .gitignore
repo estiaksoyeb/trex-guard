@@ -13,3 +13,6 @@ CMakeUserPresets.json
 
 # Rust (tcx)
 /target/
+
+# Python bytecode from the pty test helpers
+__pycache__/

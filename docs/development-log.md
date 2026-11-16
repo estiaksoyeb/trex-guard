@@ -1,5 +1,58 @@
 # Development Log
 
+## 2026-11-17 — `tgr`: the guard, ported to Rust, beside the original
+
+The C++ guard works and stays installed. `tgr` was built as a **parallel**
+binary so it can be compared against the real thing before anyone depends on
+it, and dropped by not typing it if it does not earn daily use.
+
+The port was made by reading all 1858 lines of `src/`, not from memory. The
+rule was to match `tg` exactly, quirks included, and to record every deliberate
+difference in `docs/tgr.md` — five so far, all in the cautious direction except
+the terminal-size one.
+
+### The acceptance criteria are the C++ binary, not my reading of it
+
+88 cases from `tests/test_rules.cpp` were ported verbatim
+(`tests/cpp_suite.rs`). That passes, but it only proves `tgr` matches *my
+reading* of the suite. So two parity tests drive the **real** `./build/trex-guard`
+through a pseudo-terminal and require the same verdict: one with the built-in
+rules, one with the user's real `config.ini` (21 custom rules).
+
+`tg` cannot be driven through a pipe — it calls `tcgetattr` on stdin and exits
+with `Inappropriate ioctl for device` — so both use
+`tests/support/drive_cpp.py`, which forks a pty and reads the review banner.
+Each paste starts a real shell, so a parity run takes about three minutes.
+
+That test paid for itself immediately: it flagged five pastes where the C++
+guard said Danger/Review and `tgr` said Safe. The cause was the test, not the
+code — the custom-rule pastes had been added to the built-in-rules corpus,
+which runs with no config while the C++ side reads the real one. The corpora are
+now separate (`PASTES` and `CUSTOM_RULE_PASTES`), which is also the reason the
+second test exists.
+
+### What the end-to-end tests check that nothing else can
+
+`tests/pty_e2e.rs` drives `tgr` itself and proves the things a classifier test
+cannot: an approved `Review` paste really shreds its target, a cancelled one
+leaves it intact, a safe paste is not prompted, and the guarded shell sees
+`TGR_ACTIVE=1` while `TREX_GUARD_ACTIVE` is untouched. That last one is what
+stops `scripts/tg` from believing a `tg` session is active inside a `tgr` one.
+
+Three harness bugs were found and fixed while writing those tests, each of
+which had made a test look like a product failure: Rust syntax (`Some(…)`) in a
+generated Python script; a driver that re-sent the paste after the shell
+returned to its prompt; and a marker check that read the file before the shell
+had written it. The fourth was a genuine misunderstanding: `touch` is `Safe` in
+both guards — neither has a rule for it — so a test that expected a prompt for
+`touch` was testing a rule that does not exist.
+
+### Interactive use is the remaining test
+
+Tests prove the classifier and the prompt. They cannot prove it feels right in
+a real terminal with the user's own `~/.bashrc`, which here execs into tmux.
+Daily use is the test for that.
+
 ## 2026-11-16 — `docs/onboarding.md`: one place to understand the project
 
 The knowledge needed to work on this repository was spread across

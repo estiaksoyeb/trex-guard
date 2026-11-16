@@ -1,0 +1,26 @@
+[package]
+name = "tgr"
+description = "TREX Guard, rewritten in Rust - a parallel guard beside the C++ tg"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "tgr"
+path = "src/lib.rs"
+
+[[bin]]
+name = "tgr"
+path = "src/main.rs"
+
+[dependencies]
+# The C++ guard uses std::regex (ECMAScript). fancy-regex is the closest
+# equivalent, and it is the only engine here: one engine, one behaviour.
+# A backtrack limit is mandatory - see docs/tgr.md and docs/tcx.md section 8.
+fancy-regex = "0.13"
+
+# POSIX terminal and process handling: forkpty, termios, ioctl, signals.
+# Keeping the unsafe syscall surface in a vetted crate is preferable to
+# hand-rolling it in a security binary.
+nix = { version = "0.32", features = ["term", "process", "signal", "fs", "poll"] }
