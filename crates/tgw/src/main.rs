@@ -2,6 +2,9 @@
 
 use std::process::exit;
 
+use tgw::clip::Seen;
+use tgw::log::Log;
+use tgw::pipeline::{self, Context};
 use tgw::{config, help};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -129,29 +132,104 @@ fn cmd_check_config(rest: &[String]) -> i32 {
 }
 
 fn cmd_run(rest: &[String]) -> i32 {
-    for a in rest {
-        match a.as_str() {
-            // Accepted and documented; the loop runs once then exits.
-            "--once" => {}
+    let mut once = false;
+    let mut interval = None;
+    let mut i = 0;
+    while i < rest.len() {
+        match rest[i].as_str() {
+            "--once" => once = true,
+            "--interval" => {
+                i += 1;
+                match rest.get(i).and_then(|v| v.parse::<u64>().ok()) {
+                    Some(ms) if ms > 0 => interval = Some(ms),
+                    _ => return usage("run", "--interval needs milliseconds"),
+                }
+            }
             other => return usage("run", &format!("unknown option `{other}`")),
         }
+        i += 1;
     }
-    if load_config().is_none() {
+    let Some(mut cfg) = load_config() else {
         return 2;
+    };
+    if let Some(ms) = interval {
+        cfg.poll_ms = ms;
     }
-    eprintln!("tgw: the watch loop is not built yet (slice 2)");
-    1
+
+    // The whole loop runs through the same `process_once` as `tgw once`, so
+    // there is exactly one pipeline in the program.
+    let mut seen = Seen::new(16);
+    let mut ctx = Context {
+        cfg: &cfg,
+        log: &Log::new(cfg.log_dir(), 200),
+        seen: &mut seen,
+    };
+    if let Err(e) = tgw::clip::ensure_state_dir(&cfg.state_dir()) {
+        eprintln!("tgw: state dir {}: {e}", cfg.state_dir().display());
+        return 1;
+    }
+
+    if once {
+        return report_once(&mut ctx);
+    }
+
+    eprintln!(
+        "tgw: watching (mode={}, poll={} ms). Ctrl-C to stop.",
+        cfg.mode.as_str(),
+        cfg.poll_ms
+    );
+    loop {
+        let out = pipeline::process_once(&mut ctx);
+        announce(&cfg, &out);
+        std::thread::sleep(std::time::Duration::from_millis(cfg.poll_ms.max(50)));
+    }
 }
 
 fn cmd_once(rest: &[String]) -> i32 {
     if !rest.is_empty() {
         return usage("once", "once takes no arguments");
     }
-    if load_config().is_none() {
+    let Some(cfg) = load_config() else {
         return 2;
+    };
+    let mut seen = Seen::new(16);
+    let mut ctx = Context {
+        cfg: &cfg,
+        log: &Log::new(cfg.log_dir(), 200),
+        seen: &mut seen,
+    };
+    if let Err(e) = tgw::clip::ensure_state_dir(&cfg.state_dir()) {
+        eprintln!("tgw: state dir {}: {e}", cfg.state_dir().display());
+        return 1;
     }
-    eprintln!("tgw: processing is not built yet (slice 2)");
-    1
+    report_once(&mut ctx)
+}
+
+/// Prints what happened, for `once`.
+fn report_once(ctx: &mut Context<'_>) -> i32 {
+    let out = pipeline::process_once(ctx);
+    match out.verdict {
+        tgw::log::Verdict::Ignore => {
+            println!("ignore: {}", out.reason);
+            0
+        }
+        v => {
+            println!("{}: {}", v.as_str(), out.reason);
+            if let Some(s) = &out.staged {
+                println!("staged: {}", s.path.display());
+            }
+            0
+        }
+    }
+}
+
+/// Prints a one-line notice for a non-ignore verdict.
+fn announce(cfg: &config::Config, out: &pipeline::Outcome) {
+    if out.verdict == tgw::log::Verdict::Ignore {
+        return;
+    }
+    eprintln!("tgw: {}", tgw::log::summary(out.verdict, &out.reason, &out.id));
+    let _ = cfg;
 }
 
 fn cmd_approve(rest: &[String]) -> i32 {

@@ -23,8 +23,11 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "run",
         summary: "Watch the clipboard until stopped",
-        usage: &["run [--once]"],
-        options: &["--once   Process the current clipboard once, then exit"],
+        usage: &["run [--once] [--interval MS]"],
+        options: &[
+            "--once            Process the current clipboard once, then exit",
+            "--interval MS     Override poll_ms for this run",
+        ],
         notes: &[
             "The loop never exits on a clipboard error; it backs off and retries.",
             "In `dry` mode nothing is ever executed, whatever the gate says.",
