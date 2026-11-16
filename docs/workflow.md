@@ -18,7 +18,7 @@ design is wrong.
 
 ```text
 human:  tg                        # fresh terminal -> guard active
-human:  tg fresh                  # copies prompt + filled Project section
+human:  tg fresh | clip           # prompt with the Project section filled in
 human:  paste into a new chat
 
 ai:     emits a bash block        # { rg ...; } | clip
@@ -29,7 +29,7 @@ human:  paste the block, paste output back
 ai:     as it learns, includes note-writing inside its blocks
 human:  paste -> notes saved (no extra effort)
 
-human:  tg resume                 # new chat: prompt + Project + what was learned
+human:  tg resume | clip          # new chat: prompt + Project + what was learned
 human:  paste -> the new AI is caught up
 ```
 
@@ -84,8 +84,13 @@ Both are run **once per chat**, then pasted. That is the whole interaction.
 
 ### `tg fresh` - start a session
 
-Prints the workflow prompt with the `## Project` section already filled in from
-the repository the user is standing in:
+Implemented: `tcx fresh`, reached through `tg fresh` (the guard never starts a
+shell for it). The prompt text lives in `~/.local/share/tcx-home/config/prompt.md`
+(or `<repo>/.tg/prompt.md` to pin one repository); edit the file, no rebuild.
+The path used is printed on stderr, so `tg fresh | clip` copies only the prompt.
+
+It prints the workflow prompt with the `## Project` section already filled in
+from the repository the user is standing in:
 
 ```text
 ## Project
@@ -100,9 +105,10 @@ The user copies it and pastes it at the top of a new chat. Nothing else.
 
 ### `tg resume` - continue in a new chat
 
-Same prompt and Project section, **plus** what the previous session learned
-(decisions, gotchas, open questions, where work stopped), so a fresh AI catches
-up without re-exploring the repository.
+Implemented as `tcx resume`. Same prompt and Project section, **plus** what the
+previous session learned (decisions, gotchas, open questions, where work
+stopped), so a fresh AI catches up without re-exploring the repository. Notes
+come from the store the AI already writes to while working.
 
 ## Mistakes that were actually made
 

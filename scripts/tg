@@ -8,6 +8,8 @@ if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
     echo ""
     echo "Usage:"
     echo "  tg               Launch a guarded terminal shell"
+    echo "  tg fresh         Print the prompt with this repo's Project section"
+    echo "  tg resume        As fresh, plus what previous sessions learned"
     echo "  tg --help        Show this help message"
     echo "  tg --version     Show version information"
     exit 0
@@ -17,6 +19,23 @@ if [ "$1" = "--version" ] || [ "$1" = "-v" ]; then
     echo "tg (trex-guard wrapper) 0.1.0"
     exit 0
 fi
+
+# Context commands: `tg fresh` and `tg resume` print a prompt to paste into a
+# chat. They never start a shell, so they pass straight to `tcx`. This is the
+# only one-way dependency: the guard calls tcx, never the reverse.
+case "$1" in
+    fresh|resume)
+        if command -v tcx >/dev/null 2>&1; then
+            exec tcx "$@"
+        fi
+        SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+        if [ -x "$SCRIPT_DIR/tcx" ]; then
+            exec "$SCRIPT_DIR/tcx" "$@"
+        fi
+        echo "Error: tg $1 needs tcx, which was not found on PATH." >&2
+        exit 1
+        ;;
+esac
 
 # Prevent accidental recursive wrapping
 is_force=0

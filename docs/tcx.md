@@ -249,6 +249,8 @@ or lookaround. So the hazard is user-rules-only, not built-ins.
 | `tcx prime` | **done** | Budgeted, paste-ready session briefing |
 | `tcx find` | **done** | Search notes / list keywords (notes only) |
 | `tcx import` | **done** | Import an existing `.ai/` directory |
+| `tcx fresh` | **done** | Prompt with `## Project` filled from this repo |
+| `tcx resume` | **done** | `fresh` plus what previous sessions learned |
 | `tcx map` | deferred | Project map |
 | `tcx mcp` | deferred | MCP server, behind a cargo feature |
 
@@ -263,7 +265,15 @@ tcx note --list [PATH]
 tcx prime [--budget BYTES] [PATH]
 tcx find [--tags] [QUERY...] [PATH]
 tcx import [--dir DIR] [PATH]
+tcx fresh [--template FILE] [PATH]
+tcx resume [--budget BYTES] [PATH]
 ```
+
+`tg fresh` and `tg resume` are the user-facing spellings; `tg` passes them
+straight to `tcx`. They are the two commands run once per chat (see
+`docs/workflow.md`). `fresh` prints the prompt with the `## Project` section
+filled from the repository; `resume` appends the store's notes under
+`## What previous sessions learned`, in `prime`'s order and budget.
 
 `import` defaults to `<project root>/.ai` and **never modifies the source
 directory**. It deduplicates on re-run, so importing twice is safe.
@@ -380,6 +390,62 @@ and **skip** the indexer.
 Known failure modes to design for: untracked generated files, submodules,
 sparse checkouts, index rewrites during rebase.
 
+## 11a. `fresh` / `resume`: the prompt builder
+
+These are the product commands. Everything else in `tcx` supports them.
+
+### Template lookup
+
+The prompt text lives in a file, never in the binary, because the rules change
+far more often than the tool is rebuilt. First found wins:
+
+1. `--template FILE`
+2. `<repo>/.tg/prompt.md` - lets one repository pin its own rules
+3. `<repo>/prompt.md`
+4. `$TCX_HOME/config/prompt.md`
+5. `<config>/tcx/prompt.md`
+
+The path actually used is printed to **stderr**, so `tg fresh | clip` puts only
+the prompt on the clipboard.
+
+### Filling `## Project`
+
+The template's `## Project` heading is a real heading line, not a mention in
+prose; everything from it to the next `## ` heading is replaced with the
+detected block. Filling is idempotent: running it on an already-filled prompt
+does not produce two `## Project` sections.
+
+Detection **reads** manifests and never runs a build system, so it takes
+milliseconds and executes no repository code:
+
+| Field | Source |
+| --- | --- |
+| name | repository directory name |
+| description | `Cargo.toml` description; Gradle: Android manifest + Compose usage |
+| Package | `namespace` (not `applicationId`, which carries build-type suffixes); Cargo `name` |
+| Source | the directory matching `namespace` under the module, e.g. `app/src/main/kotlin/xyz/mpv/rex/` |
+| Build | manifest present |
+| Modules | `include(":app")` lines, or Cargo workspace members |
+| type | `code` when source files exist, else `docs`, else `config` |
+
+Multi-module repositories pick the module the shell is inside, else the one
+with the most source files (the app), and list the rest.
+
+### `resume`
+
+`resume` is `fresh` plus one appended section, `## What previous sessions
+learned`, using `prime`'s shared ordering (`prime::ordered`) and sanitiser
+(`prime::sanitize_line`) and the same 6000-byte budget. That prevents the two
+commands disagreeing about what matters most.
+
+### Hardening
+
+- Detected fields are sanitised: control characters dropped, each field capped
+  at 400 characters. The output is pasted into a terminal *and* a chat.
+- Gradle `:app` must have its leading colon stripped before joining the path;
+  `Path::join(":app")` silently produces an absolute path that ignores the
+  repository root. This was a real bug caught by testing against `mpvRex`.
+
 ## 12. Rust architecture
 
 Single Cargo workspace at the repo root (`Cargo.toml`), members under
@@ -410,10 +476,13 @@ team sync, "other guards on the PTY layer", renaming `tg`, seam patterns,
 
 ## 14. Test status
 
-**92 tests passing** across seven files:
+**112 tests passing** across eight test files plus unit tests:
 
 | File | Tests | Covers |
 | --- | --- | --- |
+| `src/project.rs` (unit) | 5 | `## Project` heading detection and filling, idempotence |
+| `src/briefing.rs` (unit) | 3 | fresh vs resume content |
+| `tests/fresh.rs` | 12 | `fresh`/`resume` end to end: Cargo, Gradle, template precedence, budget |
 | `tests/id.rs` | 19 | every identity case in the matrix below |
 | `tests/notes.rs` | 19 | render, parse, sanitise, append, concurrency |
 | `tests/prime.rs` | 16 | stamp, golden output, ordering, budget, CSI |
@@ -451,8 +520,9 @@ helper, verified by hand (log, show, reset, and both validation errors).
 Plus CLI tests: opaque-id-first output, stable human labels, adoption preserves
 notes, exit codes, version, no-`HOME` error.
 
-Current status: **92 tests passing** (19 identity + 19 notes + 16 prime + 6 CLI +
-12 note/prime CLI + 17 find/import + 3 wrapper).
+Current status: **112 tests passing** (5 project + 3 briefing + 12 fresh + 19
+identity + 19 notes + 16 prime + 6 CLI + 12 note/prime CLI + 17 find/import +
+3 wrapper).
 
 ### Notable bugs found by tests (and fixed)
 
@@ -470,7 +540,18 @@ Current status: **92 tests passing** (19 identity + 19 notes + 16 prime + 6 CLI 
 4. **CSI fragments survived ESC stripping.** The ESC byte was removed but
    `[2J` remained as visible text. A second, narrow pass removes CSI-shaped
    groups without eating `array[5]`.
-5. **The `scripts/tcx` wrapper recursed forever.** It located the binary with
+5. **`tg fresh` produced no `## Project` body.** The heading was found but the
+   *line-end* search ran from the heading's last character, so the first match
+   was the newline ending the heading itself; the section body was replaced by
+   nothing. Fixed to search from the start of the heading.
+6. **A mention of the heading in prose hijacked the replacement.** Any
+   occurrence of `## Project` was treated as the section. Now only a line that
+   is exactly the heading counts.
+7. **Gradle modules resolved to `/app`.** `root.join(":app")` treats `:app` as
+   absolute and discards the repository root, so the manifest was never read.
+   Caught only by testing against the real `mpvRex` tree; a hand-made fixture
+   would have hidden it.
+8. **The `scripts/tcx` wrapper recursed forever.** It located the binary with
    `command -v tcx`, which finds the wrapper *itself* when `scripts/` is on
    `PATH`, then `exec`'d it again. `tg` never had this bug because it looks for
    `trex-guard`, a differently named binary. Fixed by comparing resolved paths

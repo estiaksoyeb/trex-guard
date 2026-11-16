@@ -1,5 +1,25 @@
 # Development Log
 
+## 2026-11-16 — `tg fresh` and `tg resume`
+
+The two commands that start and resume a chat now exist, as `tcx fresh` and
+`tcx resume`, reached through `tg`. The guard never starts a shell for them;
+`scripts/tg` forwards them before the recursive-wrap check.
+
+- Prompt text is a file, not a binary constant: `<repo>/.tg/prompt.md`, then
+  `<repo>/prompt.md`, then `$TCX_HOME/config/prompt.md`, then
+  `<config>/tcx/prompt.md`. Editing rules never needs a rebuild.
+- `## Project` is filled by **reading** manifests (Cargo, Gradle, CMake, npm,
+  pyproject, go.mod) - no build system is executed. Verified against `mpvRex`,
+  which yields `xyz.mpv.rex`, `app/src/main/kotlin/xyz/mpv/rex/`,
+  `Gradle (Kotlin DSL)`, `Android app, Kotlin + Jetpack Compose`.
+- `resume` appends `## What previous sessions learned` using `prime`'s shared
+  ordering, sanitiser and byte budget, so the two never disagree.
+- 113 tests. Two bugs came only from running against the real tree, not a
+  fixture: `root.join(":app")` resolves to `/app` (leading colon must be
+  stripped), and the heading search started after the heading so the section
+  body was deleted.
+
 ## 2026-11-16 — TREX ConteXt (`tcx`): what was built, and what was misunderstood
 
 ### Built

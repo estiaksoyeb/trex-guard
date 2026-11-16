@@ -80,3 +80,52 @@ fn wrapper_help_works() {
     let text = String::from_utf8_lossy(&out.stdout);
     assert!(text.contains("TREX ConteXt"), "got: {text}");
 }
+
+/// `tg fresh` / `tg resume` must reach `tcx` without starting a guarded shell.
+///
+/// Both commands are run once per chat and their output is pasted, so the only
+/// thing worth pinning is that the guard forwards the arguments verbatim and
+/// does not fall through into `trex-guard`.
+#[cfg(unix)]
+#[test]
+fn tg_forwards_context_commands() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let base = std::env::temp_dir().join(format!("tcx-tg-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(&base).unwrap();
+
+    // A stand-in `tcx` that records its arguments, placed first on PATH.
+    let fake = base.join("bin");
+    std::fs::create_dir_all(&fake).unwrap();
+    let log = base.join("args.txt");
+    let script = format!("#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\n", log.display());
+    let fake_tcx = fake.join("tcx");
+    std::fs::write(&fake_tcx, script).unwrap();
+    std::fs::set_permissions(&fake_tcx, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .unwrap();
+    let tg = repo.join("scripts/tg");
+
+    for command in ["fresh", "resume"] {
+        let path = format!("{}:{}", fake.display(), std::env::var("PATH").unwrap_or_default());
+        let status = std::process::Command::new(&tg)
+            .arg(command)
+            .env("PATH", &path)
+            .env("TREX_GUARD_ACTIVE", "1")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap();
+        assert!(status.success(), "tg {command} failed");
+        // Forwarded even while a guarded shell is active: no shell is started.
+        let recorded = std::fs::read_to_string(&log).unwrap();
+        assert_eq!(recorded.trim(), command);
+        let _ = std::fs::remove_file(&log);
+    }
+
+    let _ = std::fs::remove_dir_all(&base);
+}

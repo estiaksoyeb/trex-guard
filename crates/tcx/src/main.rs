@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use tcx::notes::{Kind, Note, Notes};
-use tcx::{id, store};
+use tcx::{briefing, id, project, store};
 
 /// Exit codes are part of the interface; scripts branch on them.
 const EXIT_OK: u8 = 0;
@@ -36,6 +36,8 @@ fn main() -> ExitCode {
         "prime" => run_prime(&args[1..]),
         "find" => run_find(&args[1..]),
         "import" => run_import(&args[1..]),
+        "fresh" => run_fresh(&args[1..]),
+        "resume" => run_resume(&args[1..]),
         other => {
             eprintln!("tcx: unknown command `{other}`");
             eprintln!("run `tcx --help` for usage");
@@ -480,6 +482,105 @@ fn run_import(args: &[String]) -> ExitCode {
     }
 }
 
+fn run_fresh(args: &[String]) -> ExitCode {
+    run_briefing(briefing::Mode::Fresh, args)
+}
+
+fn run_resume(args: &[String]) -> ExitCode {
+    run_briefing(briefing::Mode::Resume, args)
+}
+
+/// Shared implementation of `fresh` and `resume`.
+///
+/// Both are run once per chat and the output is pasted. They differ only in
+/// whether the previous session's notes are appended.
+fn run_briefing(mode: briefing::Mode, args: &[String]) -> ExitCode {
+    let command = match mode {
+        briefing::Mode::Fresh => "fresh",
+        briefing::Mode::Resume => "resume",
+    };
+
+    let mut path = ".".to_string();
+    let mut budget = briefing::Options::default().budget;
+    let mut template: Option<PathBuf> = None;
+
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--budget" | "-b" => match iter.next().and_then(|b| b.parse::<usize>().ok()) {
+                Some(n) if n > 0 => budget = n,
+                _ => {
+                    eprintln!("tcx {command}: --budget must be a positive number of bytes");
+                    return ExitCode::from(EXIT_USAGE);
+                }
+            },
+            "--template" | "-T" => match iter.next() {
+                Some(t) => template = Some(PathBuf::from(t)),
+                None => {
+                    eprintln!("tcx {command}: --template needs a value");
+                    return ExitCode::from(EXIT_USAGE);
+                }
+            },
+            "--path" | "-p" => match iter.next() {
+                Some(p) => path = p.clone(),
+                None => {
+                    eprintln!("tcx {command}: --path needs a value");
+                    return ExitCode::from(EXIT_USAGE);
+                }
+            },
+            other if other.starts_with('-') => {
+                eprintln!("tcx {command}: unknown option `{other}`");
+                return ExitCode::from(EXIT_USAGE);
+            }
+            other => path = other.to_string(),
+        }
+    }
+
+    let project = match Project::resolve(&path) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("tcx {command}: {e}");
+            return ExitCode::from(EXIT_ERROR);
+        }
+    };
+    project.print_adoption();
+
+    let (template_text, template_path) = match briefing::template(
+        &project.identity.root,
+        &project.store,
+        template.as_deref(),
+    ) {
+        Ok(found) => found,
+        Err(e) => {
+            eprintln!("tcx {command}: {e}");
+            return ExitCode::from(EXIT_ERROR);
+        }
+    };
+
+    let detected = project::detect(&project.identity.root);
+
+    let notes = if mode == briefing::Mode::Resume {
+        match project.notes().read_all() {
+            Ok(n) => n,
+            Err(e) => {
+                eprintln!("tcx {command}: {e}");
+                return ExitCode::from(EXIT_ERROR);
+            }
+        }
+    } else {
+        Vec::new()
+    };
+
+    let opts = briefing::Options { budget, template: None };
+    let text = briefing::build(mode, &template_text, &detected, &notes, &opts);
+
+    // stdout is the payload so it can be piped to `clip`; where the rules came
+    // from goes to stderr, where it cannot pollute the paste.
+    eprintln!("tcx {command}: template {}", template_path.display());
+    print!("{text}");
+    ExitCode::from(EXIT_OK)
+}
+
 fn print_help() {
     println!(
         "tcx - TREX ConteXt\n\n\
@@ -490,13 +591,20 @@ fn print_help() {
          tcx prime [--budget BYTES] [PATH]\n  \
          tcx find [--tags] [QUERY...] [PATH]\n  \
          tcx import [--dir DIR] [PATH]\n  \
+         tcx fresh [--template FILE] [PATH]\n  \
+         tcx resume [--budget BYTES] [PATH]\n  \
          tcx --help | --version\n\n\
          Commands:\n  \
          id      Resolve the project identity and its store path\n  \
          note    Append a dated note (decision|gotcha|open)\n  \
          prime   Print a budgeted session briefing for pasting into a chat\n  \
          find    Search this project's notes; --tags lists keywords\n  \
-         import  Import an existing .ai/ directory (never modifies it)\n\n\
+         import  Import an existing .ai/ directory (never modifies it)\n  \
+         fresh   Print the prompt with ## Project filled in from this repo\n  \
+         resume  As fresh, plus what previous sessions learned\n\n\
+         Template lookup (first found wins):\n  \
+         --template FILE, <repo>/.tg/prompt.md, <repo>/prompt.md,\n  \
+         $TCX_HOME/config/prompt.md, <config>/tcx/prompt.md\n\n\
          Environment:\n  \
          TCX_HOME   Single root containing data/, cache/ and config/\n  \
          XDG_DATA_HOME, XDG_CACHE_HOME, XDG_CONFIG_HOME\n              \

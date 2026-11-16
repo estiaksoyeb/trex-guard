@@ -95,18 +95,9 @@ pub fn build(stamp: &Stamp, notes: &[Note], opts: &Options) -> String {
         return out;
     }
 
-    // Sort by priority, then newest first within a priority.
-    // Dates are ISO, so lexical order is chronological.
-    let mut ordered: Vec<&Note> = notes.iter().collect();
-    ordered.sort_by(|a, b| {
-        priority(&a.kind)
-            .cmp(&priority(&b.kind))
-            .then_with(|| b.date.cmp(&a.date))
-    });
-
     let mut section = String::new();
     let mut omitted = 0usize;
-    for note in ordered {
+    for note in ordered(notes) {
         let line = format!("{}\n", sanitize_line(&note.render()));
         if section.len() + line.len() > opts.budget {
             omitted += 1;
@@ -123,6 +114,22 @@ pub fn build(stamp: &Stamp, notes: &[Note], opts: &Options) -> String {
     out
 }
 
+/// Notes in the order a briefing shows them.
+///
+/// Shared with `briefing` so `prime` and `tg resume` never disagree about what
+/// matters most.
+pub fn ordered(notes: &[Note]) -> Vec<&Note> {
+    // Sort by priority, then newest first within a priority.
+    // Dates are ISO, so lexical order is chronological.
+    let mut ordered: Vec<&Note> = notes.iter().collect();
+    ordered.sort_by(|a, b| {
+        priority(&a.kind)
+            .cmp(&priority(&b.kind))
+            .then_with(|| b.date.cmp(&a.date))
+    });
+    ordered
+}
+
 /// Strips control characters and escape sequences, then truncates.
 ///
 /// A filename or symbol can contain an escape sequence or read like an
@@ -133,7 +140,7 @@ pub fn build(stamp: &Stamp, notes: &[Note], opts: &Options) -> String {
 /// `prime` also handles text that did not come through that path, and a stray
 /// ESC alone is not the only risk — a surviving `[2J` reads as an instruction to
 /// a model even when it cannot execute in a terminal.
-fn sanitize_line(text: &str) -> String {
+pub fn sanitize_line(text: &str) -> String {
     const MAX: usize = 300;
     let mut out = String::with_capacity(text.len().min(MAX));
     let mut chars = 0;

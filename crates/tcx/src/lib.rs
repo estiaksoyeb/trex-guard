@@ -6,9 +6,11 @@
 //! frozen C++, and nothing here is imported by it. Dependencies point one way
 //! only.
 
+pub mod briefing;
 pub mod find;
 pub mod id;
 pub mod import;
 pub mod notes;
 pub mod prime;
+pub mod project;
 pub mod store;
