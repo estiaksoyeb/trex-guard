@@ -31,6 +31,7 @@
 //! | [`holds`] | hold records, the re-check on approval, the `auto` lock |
 //! | [`log`] | the event log and kept block copies |
 //! | [`pipeline`] | the one ordered path from clipboard to verdict |
+//! | [`run`] | single instance, signal handling, state dir checks, sweeps |
 //!
 //! The rest (clipboard polling, staging, gating, execution, holds) arrives in
 //! later slices; see `docs/tgw.md`.
@@ -43,3 +44,4 @@ pub mod holds;
 pub mod help;
 pub mod log;
 pub mod pipeline;
+pub mod run;
