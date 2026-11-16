@@ -17,9 +17,11 @@
 //! a checkout cannot change the rules an AI is given:
 //!
 //! 1. the `template` argument, when the caller passes one
-//! 2. `$TCX_HOME/config/prompt.md`, or `<config>/tcx/prompt.md`
+//! 2. `<config>/prompt.md`
+//! 3. `<config>/tg/prompt.md` (legacy name)
 //!
-//! Nothing is read from the repository itself.
+//! `<config>` is `$TCX_HOME/config` when `TCX_HOME` is set, otherwise
+//! `~/.config/tcx`. Nothing is read from the repository itself.
 //!
 //! # Security
 //!

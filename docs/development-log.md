@@ -1,5 +1,80 @@
 # Development Log
 
+## 2026-11-16 — `docs/onboarding.md`: one place to understand the project
+
+The knowledge needed to work on this repository was spread across
+`docs/workflow.md` (the loop and the mistakes), `docs/tcx.md` (the design
+record) and the code. A fresh session had to read all three and reconcile them,
+and the design record already had stale items left behind by earlier decisions.
+
+`docs/onboarding.md` now answers, in order: what the two binaries are, what the
+human's job is, the two per-chat commands, where context lives, what belongs in
+a note, what `map` generated versus stored, why each architectural split exists,
+and every mistake already made with the rule it produced. It ends with a table
+of where to read next.
+
+`docs/workflow.md` is now a short pointer rather than a second copy. Two copies
+of the same rules is the drift failure catalogued in `docs/onboarding.md` §9.10,
+and this changelog records a previous instance of it.
+
+Stale items removed while consolidating:
+
+- `docs/tcx.md` §15 still listed the rejected 5-session trial as "the next
+  thing to do"; it is now marked settled, with a pointer to why.
+- §13's cut list still contained `map`, which shipped.
+- §16 said "92 tests"; the count is no longer restated there.
+- a live store note told every new session the trial was an open question. A
+  superseding note now records that it was rejected (the original is kept:
+  notes are append-only).
+
+The `resume` output is now the practical check that the documentation is good
+enough: if a new session still needs a file listing to get oriented, the
+project section or the notes are the problem, not the session.
+
+### The doc was then tested against a fresh reader
+
+A subagent was given only `docs/onboarding.md` and asked what it understood.
+That found real defects, not style issues:
+
+- the template fallback was documented as `~/.config/tcx/prompt.md`; the code
+  actually tries `<config>/prompt.md` then `<config>/tg/prompt.md`, where
+  `<config>` already ends in `tcx`. `tcx fresh --help` had the same wrong text.
+- `note --dir` worked but was absent from `tcx note --help`, so the flag `map`
+  depends on was invisible. The same was true of `--path` on `prime` and
+  `import`.
+- the help tests claimed to check both directions; they only checked
+  documented → accepted. `every_flag_the_parser_accepts_is_documented` now
+  reads the parser arms out of `main.rs` and requires each flag in the table.
+  Verified by deleting `--dir` from the table and watching it fail.
+- the doc said both per-chat commands run once per chat, and never said
+  whether the AI may edit its own prompt (it may not; the rules are the
+  human's), or when to ask for `prime` over `resume`.
+
+Two flags remain deliberately overloaded — `-k` on `note`/`find` means
+`--kind`, and `-d` means `--dir` on `note` but `--depth` on `map`. Both are now
+documented in `--help` and in the onboarding doc, and both are spelled long in
+examples.
+
+### A second cold read, and one more code bug
+
+The corrected doc was given to a second fresh reader, alongside the code. It
+confirmed the substantive claims and found one more defect in the binary:
+
+- `tcx map --under <missing>` printed `… is not a directory` **to stdout and
+  exited 0**, so a typo was indistinguishable from a successful empty map. It
+  is now stderr + exit 1, and `map::render` returns `Result` to make that
+  impossible to reintroduce by accident.
+- the store layout under `TCX_HOME` has **no** `tcx` suffix; only the XDG
+  layout does. The doc had the rule backwards, contradicting its own example,
+  and `briefing.rs`'s module doc listed the wrong template fallbacks.
+
+Doc corrections from the same read: `fresh --help` documents the fallback
+*order*, not the resolved path (the resolved path goes to stderr at runtime);
+`TCX_HOME` is only set in a shell that sourced the integration file; the
+budget skips whole notes rather than truncating them; `import`'s positional
+argument is the source directory, not the project; and the trailing-path guard
+on `note` only catches paths containing `/`, not bare directory names.
+
 ## 2026-11-16 — `tcx map`
 
 Answers "where does everything live" without a file dump, split so neither half
@@ -484,4 +559,14 @@ Fixed scanner bypass where scripts starting with `#` comments caused subsequent 
 
 
 
+
+
+### A third bug, found by using the tool
+
+Writing the notes for this entry turned up a defect that no test would have
+looked for: `tcx find help` printed the help page instead of searching, because
+`wants_help` accepted a bare `help` alongside `--help` and `-h`. The help
+*page* is not a search result; a query is data. Only the flags count now, and
+`tests/help.rs` asserts the word is searchable. The unit test that had pinned
+the old behaviour was updated — it had encoded the bug.
 

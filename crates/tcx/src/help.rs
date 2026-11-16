@@ -41,13 +41,14 @@ pub const COMMANDS: &[Command] = &[
         name: "note",
         summary: "Append a dated note (decision|gotcha|open)",
         usage: &[
-            "note [-k KIND] [-f FILE]... [-t TAG]... [--path PATH] TEXT",
+            "note [-k KIND] [-f FILE]... [-t TAG]... [-d DIR] [--path PATH] TEXT",
             "note --list [--path PATH]",
         ],
         options: &[
             "-k, --kind KIND   decision (default) | gotcha | open",
             "-f, --file FILE   File the note is about; repeatable",
             "-t, --tag TAG     Keyword for scoped search; repeatable",
+            "-d, --dir DIR     Attach the note to a directory, so `tcx map` shows it",
             "--list            Print every note instead of appending one",
             "--path, -p PATH   Project to resolve (default: .)",
         ],
@@ -55,13 +56,18 @@ pub const COMMANDS: &[Command] = &[
             "Notes are one line each, appended and never rewritten. The date is",
             "taken from the system clock, so callers never supply one.",
             "The store lives outside the repository.",
+            "`note` takes no positional PATH (every other command does). A trailing",
+            "`.` or an existing path is rejected rather than stored as note text.",
         ],
     },
     Command {
         name: "prime",
         summary: "Print a budgeted session briefing for pasting into a chat",
-        usage: &["prime [--budget BYTES] [PATH]"],
-        options: &["-b, --budget BYTES   Byte cap on the notes (default: 6000)"],
+        usage: &["prime [--budget BYTES] [--path PATH] [PATH]"],
+        options: &[
+            "-b, --budget BYTES   Byte cap on the notes (default: 6000)",
+            "--path, -p PATH      Project to resolve (default: .)",
+        ],
         notes: &[
             "Prints a freshness stamp, then notes in order: gotchas, then open",
             "questions, then decisions newest-first.",
@@ -75,6 +81,8 @@ pub const COMMANDS: &[Command] = &[
         usage: &["find [-k KEYWORD]... [--tags] [QUERY...] [PATH]"],
         options: &[
             "-k, --kind KEYWORD   Only notes carrying this keyword; repeatable",
+            "                     (spelled --kind for consistency with note; it",
+            "                     takes a keyword, not a note kind)",
             "--tags               List the project's keywords with counts",
             "--path, -p PATH      Project to resolve (default: .)",
         ],
@@ -86,8 +94,11 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "import",
         summary: "Import an existing .ai/ directory (never modifies it)",
-        usage: &["import [--dir DIR] [PATH]"],
-        options: &["-d, --dir DIR        Source directory (default: <project>/.ai)"],
+        usage: &["import [--dir DIR] [--path PATH] [PATH]"],
+        options: &[
+            "-d, --dir DIR        Source directory (default: <project>/.ai)",
+            "--path, -p PATH      Project to resolve (default: .)",
+        ],
         notes: &[
             "The source directory is only read. Importing twice is safe:",
             "duplicate notes are skipped.",
@@ -100,13 +111,16 @@ pub const COMMANDS: &[Command] = &[
         options: &[
             "-T, --template FILE   Use this template instead of the config copy",
             "--path, -p PATH       Project to resolve (default: .)",
+            "-b, --budget BYTES    Recognised and refused: fresh prints no notes,",
+            "                      so a budget could not apply. Use `resume`.",
         ],
         notes: &[
             "The prompt goes to stdout; the template path used goes to stderr,",
             "so `tg fresh | clip` copies only the prompt.",
             "The template is read only from your config directory, never from the",
-            "repository: --template, then $TCX_HOME/config/prompt.md, then",
-            "<config>/tcx/prompt.md.",
+            "repository: --template, then <config>/prompt.md, then",
+            "<config>/tg/prompt.md. With TCX_HOME set, <config> is",
+            "$TCX_HOME/config; otherwise it is ~/.config/tcx.",
             "Prints project details and nothing else; `resume` adds the notes.",
         ],
     },
@@ -207,9 +221,13 @@ pub fn for_command(name: &str) -> Option<String> {
 }
 
 /// Whether `args` asks for help (`--help`, `-h`, `help`).
+/// Whether the arguments ask for help.
+///
+/// Only *flags* count. A bare `help` is not one: it is ordinary text, and
+/// `tcx find help` must be able to search for the word rather than being
+/// unable to look up notes about the help system.
 pub fn wants_help(args: &[String]) -> bool {
-    args.iter()
-        .any(|a| matches!(a.as_str(), "--help" | "-h" | "help"))
+    args.iter().any(|a| matches!(a.as_str(), "--help" | "-h"))
 }
 
 #[cfg(test)]
@@ -250,10 +268,12 @@ mod tests {
     }
 
     #[test]
-    fn help_detection_accepts_the_usual_spellings() {
-        for spelling in ["--help", "-h", "help"] {
+    fn help_detection_accepts_flag_spellings_only() {
+        for spelling in ["--help", "-h"] {
             assert!(wants_help(&[spelling.to_owned()]));
         }
+        // A bare `help` is data, not a request: `tcx find help` must search.
+        assert!(!wants_help(&["help".to_owned()]));
         assert!(!wants_help(&["--template".to_owned()]));
         assert!(!wants_help(&[]));
     }

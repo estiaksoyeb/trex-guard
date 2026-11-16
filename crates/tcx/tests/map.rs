@@ -153,13 +153,14 @@ fn under_is_not_capped_by_the_distance_from_the_root() {
 }
 
 #[test]
-fn under_an_absent_directory_says_so() {
+fn under_an_absent_directory_is_an_error() {
     let f = sample("absent");
-    let (out, _, code) = f.run(&["map", "--under", "nope"]);
-    // Not an error exit: asking for a subtree that is gone is a question with
-    // a clear answer, not a failure.
-    assert_eq!(code, Some(0));
-    assert!(out.contains("`nope` is not a directory in this project"), "{out}");
+    let (out, stderr, code) = f.run(&["map", "--under", "nope"]);
+    // A missing subtree used to print a message to stdout and exit 0, which
+    // made a bad path indistinguishable from a successful empty map.
+    assert_eq!(code, Some(1));
+    assert!(out.is_empty(), "error text went to stdout: {out}");
+    assert!(stderr.contains("`nope` is not a directory in this project"), "{stderr}");
 }
 
 #[test]

@@ -343,3 +343,21 @@ fn help_lists_both_commands() {
     assert!(stdout.contains("tcx fresh"));
     assert!(stdout.contains("tcx resume"));
 }
+
+#[test]
+fn fresh_rejects_a_budget_it_cannot_apply() {
+    // `fresh` prints no notes, so --budget would do nothing. A flag that is
+    // accepted and ignored reads as success; reject it instead.
+    let repo = cargo_repo("fresh-budget");
+    let home = Temp::new("home-fresh-budget");
+    config_template(home.path());
+
+    let (stdout, stderr, code) = run(home.path(), repo.path(), &["fresh", "--budget", "500"]);
+    assert_eq!(code, 2);
+    assert!(stdout.is_empty(), "printed a prompt anyway: {stdout}");
+    assert!(stderr.contains("use resume"), "{stderr}");
+
+    // `resume` is where the budget belongs, and still works.
+    let (_, stderr, code) = run(home.path(), repo.path(), &["resume", "--budget", "500"]);
+    assert_eq!(code, 0, "{stderr}");
+}

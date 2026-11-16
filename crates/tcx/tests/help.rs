@@ -296,3 +296,171 @@ fn tg_help_names_the_context_commands() {
         assert!(text.contains(&format!("tg {command}")), "tg --help lacks {command}");
     }
 }
+
+// -------------------------------------------------------------------------
+// The other direction: every flag the parser accepts must be documented
+// -------------------------------------------------------------------------
+//
+// Probe-based checking above only proves documented flags exist. It cannot see
+// a flag that exists and is undocumented, because nothing asks the parser for
+// its full flag list. `--dir` on `note` shipped exactly that way: it worked,
+// `tcx note --help` never mentioned it, and the tests stayed green.
+//
+// The parser arms are uniform (`match arg.as_str() { "--x" | "-y" => ... }`),
+// so the accepted flags can be read out of the source without a hand-kept
+// list. Each arm's string literals are attributed to the nearest enclosing
+// `fn run_<name>`.
+
+/// Flags accepted by each `run_<command>` function, read from `main.rs`.
+fn accepted_flags() -> Vec<(String, Vec<String>)> {
+    let src = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("src")
+            .join("main.rs"),
+    )
+    .expect("read main.rs");
+
+    let mut out: Vec<(String, Vec<String>)> = Vec::new();
+    let mut current: Option<String> = None;
+
+    for line in src.lines() {
+        let trimmed = line.trim();
+
+        // A new `fn run_<name>(` starts attributing flags to that command.
+        if let Some(rest) = trimmed.strip_prefix("fn run_") {
+            let name: String = rest
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                .collect();
+            // `run_briefing` is shared by `fresh` and `resume`; it is not a
+            // command, so its flags belong to both.
+            current = Some(if name == "briefing" {
+                // Shared by both; whichever command documents a flag is fine.
+                "resume".to_owned()
+            } else {
+                name
+            });
+            continue;
+        }
+
+        // Only match arms, so flags mentioned in error messages are ignored.
+        if !trimmed.starts_with('"') || !trimmed.contains("=>") {
+            continue;
+        }
+        let Some(ref command) = current else { continue };
+
+        let literals: Vec<String> = trimmed
+            .split('"')
+            .skip(1)
+            .step_by(2)
+            // `--` is the end-of-options marker, not a flag.
+            .filter(|s| *s != "--")
+            .filter(|s| s.starts_with("--") || (s.starts_with('-') && s.len() == 2))
+            .map(str::to_owned)
+            .collect();
+        if literals.is_empty() {
+            continue;
+        }
+
+        let entry = match out.iter_mut().find(|(name, _)| name == command) {
+            Some(entry) => entry,
+            None => {
+                out.push((command.clone(), Vec::new()));
+                out.last_mut().unwrap()
+            }
+        };
+        for flag in literals {
+            if !entry.1.contains(&flag) {
+                entry.1.push(flag);
+            }
+        }
+    }
+
+    out
+}
+
+#[test]
+fn every_flag_the_parser_accepts_is_documented() {
+    let accepted = accepted_flags();
+    // A parse failure would make the test vacuous, so prove it found arms.
+    assert!(
+        accepted.iter().any(|(name, flags)| name == "note" && flags.contains(&"--dir".to_owned())),
+        "could not read the note parser; got {accepted:?}"
+    );
+
+    let mut failures = Vec::new();
+    for (command, flags) in &accepted {
+        let Some(doc) = COMMANDS.iter().find(|c| &c.name == command) else {
+            // Commands without a help entry are caught by their own test.
+            continue;
+        };
+        let documented = documented_flags(doc);
+        for flag in flags {
+            if !documented.contains(flag) {
+                failures.push(format!(
+                    "tcx {command}: accepts {flag} but `tcx {command} --help` omits it"
+                ));
+            }
+        }
+    }
+
+    assert!(failures.is_empty(), "undocumented flags:\n{}", failures.join("\n"));
+}
+
+#[test]
+fn onboarding_documents_every_command_and_its_flags() {
+    // docs/onboarding.md is what a fresh session reads first. It is prose, so
+    // it cannot be generated, but it can be checked: every command and every
+    // accepted flag must appear, or the doc is already behind the binary.
+    let doc = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("docs")
+            .join("onboarding.md"),
+    )
+    .expect("read docs/onboarding.md");
+
+    let mut failures = Vec::new();
+    for command in COMMANDS {
+        if !doc.contains(&format!("tcx {}", command.name)) {
+            failures.push(format!("docs/onboarding.md never mentions `tcx {}`", command.name));
+        }
+    }
+    for (command, flags) in accepted_flags() {
+        for flag in flags {
+            if !doc.contains(&flag) {
+                failures.push(format!(
+                    "docs/onboarding.md does not mention `{flag}` (accepted by tcx {command})"
+                ));
+            }
+        }
+    }
+
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn the_word_help_is_searchable_data() {
+    // `--help`/`-h` ask for help; a bare `help` is text. Matching it meant
+    // `tcx find help` printed the help page instead of searching for notes
+    // about help, which is the one query a maintainer is most likely to run.
+    let fixture = Fixture::new("help-word");
+    let (_, stderr, code) = fixture.run(&[
+        "note",
+        "--kind",
+        "gotcha",
+        "the help table lists flags",
+    ]);
+    assert_eq!(code, Some(0), "{stderr}");
+
+    let (out, _, code) = fixture.run(&["find", "help"]);
+    assert_eq!(code, Some(0));
+    assert!(out.contains("the help table lists flags"), "{out}");
+    assert!(!out.contains("Usage:"), "printed the help page instead: {out}");
+
+    // `tcx help` as the first word still means help.
+    let (out, _, code) = fixture.run(&["help"]);
+    assert_eq!(code, Some(0));
+    assert!(out.contains("Usage:"), "{out}");
+}

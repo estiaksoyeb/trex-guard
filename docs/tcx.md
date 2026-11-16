@@ -3,6 +3,10 @@
 > Status: **v1 in progress**. This document is the authoritative record of the
 > decisions made while building `tcx`. It exists so a fresh session can pick up
 > without re-deriving anything.
+>
+> **New to the project?** Read [`docs/onboarding.md`](onboarding.md) first: what
+> the project is, how the human/AI loop works, and why it is built this way.
+> This page is the design record behind that introduction, not a starting point.
 
 ## 1. What `tcx` is
 
@@ -272,7 +276,7 @@ tcx map [--depth N] [--under PATH] [PATH]
 
 `tg fresh` and `tg resume` are the user-facing spellings; `tg` passes them
 straight to `tcx`. They are the two commands run once per chat (see
-`docs/workflow.md`). `fresh` prints the prompt with the `## Project` section
+`docs/onboarding.md`). `fresh` prints the prompt with the `## Project` section
 filled from the repository; `resume` appends the store's notes under
 `## What previous sessions learned`, in `prime`'s order and budget.
 
@@ -537,7 +541,11 @@ matching and **fail loudly at config load** on unsupported seam patterns.
 
 MCP/server, tree-sitter, LSP, embeddings, auto-written notes, multi-machine or
 team sync, "other guards on the PTY layer", renaming `tg`, seam patterns,
-`ctags`, `map`.
+`ctags`.
+
+(`map` was on this list until it was built with generated structure and stored
+judgment; see §11b. It kept the property the cut list protects: nothing
+stored can go stale.)
 
 ## 14. Test status
 
@@ -628,8 +636,9 @@ identity + 19 notes + 16 prime + 6 CLI + 12 note/prime CLI + 17 find/import +
    leave it untouched? **Decided: leave untouched**, and a test enforces it.
 2. When a repo has several roots and several stores, `--adopt` semantics are
    undefined. Deferred deliberately.
-3. Does `prime` earning its keep actually hold? Untested. See §10 metric.
-   This is the **next thing to do**: run the 5-session trial.
+3. ~~Does `prime` earning its keep actually hold?~~ **Settled: daily use is
+   the test.** The 5-session trial was rejected as busywork and its helper
+   deleted (§10). Do not rebuild it.
 4. crates.io / PyPI / Homebrew name check for `tcx`. Not yet done.
 5. `find` is a plain substring match, so `root` also matches `proot`. Acceptable
    for v1 (predictable beats clever); revisit only if it causes real misses.
@@ -644,7 +653,7 @@ identity + 19 notes + 16 prime + 6 CLI + 12 note/prime CLI + 17 find/import +
 
 ```bash
 cargo build                 # builds crates/tcx -> target/debug/tcx
-cargo test                  # 92 tests
+cargo test                  # the full tcx suite
 cargo build --release
 ```
 

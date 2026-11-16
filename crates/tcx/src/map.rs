@@ -226,7 +226,7 @@ fn normalise_dir(dir: &str) -> String {
 /// Renders the map.
 ///
 /// Deterministic for a given tree and note set, so it is golden-file testable.
-pub fn render(root: &Path, notes: &[Note], opts: &Options) -> String {
+pub fn render(root: &Path, notes: &[Note], opts: &Options) -> Result<String, String> {
     let annotated = judgement(notes);
     let target = opts
         .under
@@ -243,7 +243,9 @@ pub fn render(root: &Path, notes: &[Note], opts: &Options) -> String {
     } else {
         let dir = root.join(&target);
         if !dir.is_dir() {
-            return format!("tcx map: `{target}` is not a directory in this project\n");
+            // An error, not output: printing this to stdout with exit 0 let a
+            // script read a missing subtree as a successful, empty map.
+            return Err(format!("`{target}` is not a directory in this project"));
         }
         (dir, target.clone())
     };
@@ -280,7 +282,7 @@ pub fn render(root: &Path, notes: &[Note], opts: &Options) -> String {
         }
     }
 
-    out
+    Ok(out)
 }
 
 fn render_node(

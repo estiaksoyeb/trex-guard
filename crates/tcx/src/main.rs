@@ -30,6 +30,7 @@ fn main() -> ExitCode {
     }
 
     match command {
+        // `help` is accepted as the first word only; elsewhere it is data.
         "--help" | "-h" | "help" => {
             print!("{}", help::overall());
             ExitCode::from(EXIT_OK)
@@ -583,9 +584,18 @@ fn run_map(args: &[String]) -> ExitCode {
         }
     };
 
-    let text = tcx::map::render(&project.identity.root, &notes, &opts);
-    print!("{text}");
-    ExitCode::from(EXIT_OK)
+    match tcx::map::render(&project.identity.root, &notes, &opts) {
+        Ok(text) => {
+            print!("{text}");
+            ExitCode::from(EXIT_OK)
+        }
+        Err(e) => {
+            // stderr and exit 1: a missing subtree must not look like a
+            // successful, empty map to anything reading the output.
+            eprintln!("tcx map: {e}");
+            ExitCode::from(EXIT_ERROR)
+        }
+    }
 }
 
 fn run_fresh(args: &[String]) -> ExitCode {
@@ -614,6 +624,13 @@ fn run_briefing(mode: briefing::Mode, args: &[String]) -> ExitCode {
     while let Some(arg) = iter.next() {
         match arg.as_str() {
             "--budget" | "-b" => match iter.next().and_then(|b| b.parse::<usize>().ok()) {
+                // `fresh` prints no notes, so a budget would silently do
+                // nothing. Accepting a flag that cannot act is worse than
+                // rejecting it: it looks like it worked.
+                Some(_) if mode == briefing::Mode::Fresh => {
+                    eprintln!("tcx fresh: --budget applies to the notes, which fresh does not print; use resume");
+                    return ExitCode::from(EXIT_USAGE);
+                }
                 Some(n) if n > 0 => budget = n,
                 _ => {
                     eprintln!("tcx {command}: --budget must be a positive number of bytes");

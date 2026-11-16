@@ -9,6 +9,10 @@
 
 **TREX Guard** protects your terminal against accidental clipboard disasters. It intercepts pastes at the operating system pseudo-terminal layer *before* characters reach the shell, evaluates commands semantically against destructive threat models, and halts high-risk operations for explicit operator review.
 
+The repository also ships a second, independent binary: **`tcx`** (TREX ConteXt), a Rust context store that keeps what an AI chat learned about a project *outside* the repository and prints it as a ready-to-paste prompt. The guard is unchanged by it; the two share a repository and nothing else.
+
+> **New to this repository?** Read [docs/onboarding.md](docs/onboarding.md) first. It explains what the project is, how the human/AI loop works, why the pieces are split the way they are, and the mistakes already made.
+
 ---
 
 ## ⚡ Why TREX Guard?
@@ -145,8 +149,25 @@ npm publish   | review | \bnpm\s+publish\b   | Publishes package to public regis
 
 ---
 
+## 🧠 Context Store (`tcx`)
+
+Beyond paste safety, the repository carries a context store for AI-assisted work. It lives outside the repository, stores judgment only (decisions, gotchas, open questions), and answers one question cheaply: *given this project, what should a new chat know before it starts?*
+
+```bash
+tg fresh | clip     # prompt with this repo's Project section filled in
+tg resume | clip    # the same, plus what previous sessions learned
+tcx map --depth 2   # shallow tree, annotated with what you learned per directory
+tcx note -k gotcha -d crates/tcx/src "help is one table in help.rs; tests fail if it drifts"
+```
+
+* [Onboarding & Workflow](docs/onboarding.md): read this first — the loop, the store, `map`, and why each decision was made
+* [`tcx` Design Record](docs/tcx.md): identity, storage, notes, freshness, command surface
+
+---
+
 ## 📚 Documentation
 
+* [Onboarding & Workflow](docs/onboarding.md): What the project is, how it is used, and why
 * [Configuration Guide](docs/configuration.md): Custom rules, allowlists, and configuration syntax
 * [Installation & Shell Integration](docs/install.md): Shell hooks, packaging, and setup options
 * [Architecture & Design](docs/architecture.md): PTY interception model and security boundaries
