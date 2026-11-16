@@ -47,6 +47,20 @@ had written it. The fourth was a genuine misunderstanding: `touch` is `Safe` in
 both guards — neither has a rule for it — so a test that expected a prompt for
 `touch` was testing a rule that does not exist.
 
+### The pty driver was racing the shell
+
+Running the installed binary by hand showed every paste echoed raw, with the
+bracketed-paste markers intact — the guard looked as if it had stopped
+classifying. It had not: the driver wrote the paste before bash had finished
+starting, so the terminal buffered it and bash read it as ordinary typing.
+The driver now waits for the shell's prompt before sending anything. The
+end-to-end tests had been passing on that race, which is the useful lesson:
+they were green, but not for the reason claimed.
+
+With the race fixed, the suite still passes — and one test was added for the
+property the separate marker exists to protect: the real installed `tg` starts
+inside a real `tgr` session, rather than printing its "already active" notice.
+
 ### Interactive use is the remaining test
 
 Tests prove the classifier and the prompt. They cannot prove it feels right in

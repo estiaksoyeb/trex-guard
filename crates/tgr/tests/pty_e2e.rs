@@ -168,6 +168,35 @@ fn a_review_paste_is_prompted_but_not_treated_as_danger() {
 }
 
 #[test]
+fn tg_still_starts_inside_a_tgr_session() {
+    // The whole reason for a separate marker. `scripts/tg` exits with a notice
+    // when TREX_GUARD_ACTIVE=1; if tgr set that variable, a tgr session could
+    // never run the C++ guard. This runs the real installed `tg` inside a real
+    // `tgr` and requires it to answer for itself.
+    if which("tg").is_none() {
+        eprintln!("SKIP: no `tg` on PATH");
+        return;
+    }
+    let (screen, _) = drive_with("tg --version\n", None);
+    assert!(
+        screen.contains("trex-guard wrapper"),
+        "tg refused to start inside tgr, so the session markers are confused:\n{screen}"
+    );
+    assert!(
+        !screen.contains("already active"),
+        "tg thought a tg session was already active inside tgr:\n{screen}"
+    );
+}
+
+fn which(name: &str) -> Option<PathBuf> {
+    std::env::var_os("PATH").and_then(|paths| {
+        std::env::split_paths(&paths)
+            .map(|dir| dir.join(name))
+            .find(|p| p.is_file())
+    })
+}
+
+#[test]
 fn the_child_sees_the_tgr_marker_not_the_tg_one() {
     // Two guards must not mistake each other for themselves. If tgr exported
     // TREX_GUARD_ACTIVE, `scripts/tg` would refuse to start a nested tg and

@@ -58,6 +58,26 @@ def drive(binary, paste, reply=None, timeout=6.0, extra_args=(), env=None, settl
         except OSError:
             return False
 
+    # Wait for the guarded shell to print a prompt before pasting. A paste
+    # sent before bash has finished starting is buffered by the terminal and
+    # arrives with no bracketed-paste handling, so it is never classified —
+    # the guard looks broken when only the timing was wrong.
+    # `PS1` is set above to `TGRPROMPT> `, so this is a reliable readiness
+    # signal rather than a guess at how long bash takes to start.
+    startup = time.time() + min(timeout, 5.0)
+    while time.time() < startup:
+        r, _, _ = select.select([fd], [], [], 0.05)
+        if r:
+            try:
+                chunk = os.read(fd, 65536)
+            except OSError:
+                break
+            if not chunk:
+                break
+            out += chunk
+            if b"TGRPROMPT>" in out:
+                break
+
     while time.time() < deadline:
         r, _, _ = select.select([fd], [], [], 0.05)
         if r:
