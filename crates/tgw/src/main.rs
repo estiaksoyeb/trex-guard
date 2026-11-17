@@ -79,7 +79,15 @@ fn usage(command: &str, message: &str) -> i32 {
 }
 
 /// Loads and validates config, reporting every problem. `None` means stop.
+///
+/// A first run has no config file at all. Rather than making that a refusal
+/// the user has to diagnose, the default is written once and then loaded. The
+/// default is `confirm` with an explicit gate, so this creates nothing that
+/// can run a block unattended. An existing file is **never** overwritten.
 fn load_config() -> Option<config::Config> {
+    if let Some(written) = config::create_default() {
+        eprintln!("tgw: created {}", written.display());
+    }
     let (cfg, path) = config::load();
     let mut problems = cfg.validate();
     if let Some(p) = &path {
@@ -101,6 +109,12 @@ fn load_config() -> Option<config::Config> {
 fn cmd_check_config(rest: &[String]) -> i32 {
     if !rest.is_empty() {
         return usage("check-config", "check-config takes no arguments");
+    }
+    // First run: create the default rather than reporting its absence. This is
+    // the command the error message points at, so it has to be the command
+    // that fixes it. An existing config is never touched.
+    if let Some(written) = config::create_default() {
+        println!("created: {}", written.display());
     }
     let path = config::config_path();
     match &path {

@@ -793,3 +793,45 @@ without `argv[0]`, so `--force` sat in the program-name slot and was never
 seen as a flag; and the "did it start?" check read `waitpid` once, catching a
 refusing guard mid-exit and calling it started. The generated script is now
 printed under `TGR_TEST_DEBUG=1` rather than reasoned about.
+
+### Installing did not leave a working setup
+
+Reported as: "installing the software should automatically fix everything."
+It did not. `tgw run` failed on a machine where a correct `watch.ini` already
+existed, and the fix asked of the user was to copy it somewhere else by hand.
+
+Two separate faults, and the second is the one that mattered:
+
+**The installer never installed the Rust tools.** `scripts/install.sh` knew
+only about the C++ `trex-guard` and `tg`. It never placed `tgr`, `tgw` or
+`tcx`, and never wrote `watch.ini`. The installer now ships them from the
+tarball when present, builds them from source when `cargo` is available, and
+runs `check-config` at the end so the watchdog is verified rather than assumed.
+
+**`tgw` bet on one config path.** It resolved a single root from the
+environment, so setting `TCX_HOME` for `tcx` hid a `watch.ini` that already
+existed under `~/.config/tcx/`. From the user's side the file was plainly
+there and the tool refused to see it — and the error message named the path it
+wanted rather than the one that existed.
+
+It now searches every conventional location in order, and creates the default
+when none exists. `check-config` creates it too, because that is the command
+the error message points at, so "just run `tgw check-config`" has to be true.
+An existing file is never overwritten.
+
+The one deliberate limit: an **explicit** `TCX_HOME` stops the search. Falling
+through to another root's file there would mean `tgw` reading a config the
+user did not point it at. Written down because it is the sort of rule a later
+reader would otherwise "simplify" away.
+
+Two existing tests asserted that a missing config was an error. They were not
+deleted: one was rewritten to assert the default is created *and* is usable
+(`confirm` plus an explicit gate), the other to assert an existing config is
+never overwritten. A third covers the default install — no environment
+variables at all, config under `~/.config/tcx` — which is the case the
+installer produces.
+
+A test-harness fault caught along the way: the config tests set `TCX_HOME` but
+not `HOME`, so the new search reached the real `~/.config/tcx/watch.ini` and
+passed or failed depending on what was installed on the machine. `Home::run`
+now isolates `HOME` and `XDG_CONFIG_HOME` too.

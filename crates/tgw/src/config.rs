@@ -216,10 +216,89 @@ fn env_nonempty(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|v| !v.is_empty())
 }
 
-/// The path [`load`] would read, for `doctor` and error messages.
-pub fn config_path() -> Option<PathBuf> {
-    config_dir().map(|d| d.join("watch.ini"))
+/// Every place `watch.ini` may live, most specific first.
+///
+/// The lookup above picks **one** root from the environment, so setting
+/// `TCX_HOME` silently hides a `watch.ini` that already exists under
+/// `~/.config/tcx/`. From the user's side that looks like "the file is right
+/// there and the tool cannot see it". So the environment-preferred path is
+/// tried first and the conventional ones after it, rather than betting on one.
+pub fn config_candidates() -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = Vec::new();
+    let mut push = |p: PathBuf| {
+        if !out.contains(&p) {
+            out.push(p);
+        }
+    };
+    if let Some(dir) = config_dir() {
+        push(dir.join("watch.ini"));
+    }
+    // An explicit `TCX_HOME` is a statement about where config lives. Falling
+    // through to another root's file would make `tgw` read a config the user
+    // did not point it at, so that case stops here.
+    if env_nonempty("TCX_HOME").is_some() {
+        return out;
+    }
+    if let Some(xdg) = env_nonempty("XDG_CONFIG_HOME") {
+        push(PathBuf::from(xdg).join("tcx").join("watch.ini"));
+    }
+    if let Some(home) = env_nonempty("HOME") {
+        push(PathBuf::from(&home).join(".config").join("tcx").join("watch.ini"));
+        push(PathBuf::from(home).join(".local/share/tcx-home/config/watch.ini"));
+    }
+    out
 }
+
+/// The path `tgw` uses: the first candidate that exists.
+///
+/// Falls back to the environment-preferred path so a caller that is about to
+/// *create* a config writes it where the current setup expects it.
+pub fn config_path() -> Option<PathBuf> {
+    let candidates = config_candidates();
+    match candidates.iter().find(|p| p.is_file()) {
+        Some(found) => Some(found.clone()),
+        None => candidates.into_iter().next(),
+    }
+}
+
+/// Writes a default `watch.ini` if no candidate exists yet.
+///
+/// Returns the path written, or `None` when a config already exists anywhere
+/// (nothing is ever overwritten) or no directory could be created.
+pub fn create_default() -> Option<PathBuf> {
+    let candidates = config_candidates();
+    if candidates.iter().any(|p| p.is_file()) {
+        return None;
+    }
+    let target = candidates.into_iter().next()?;
+    let dir = target.parent()?;
+    std::fs::create_dir_all(dir).ok()?;
+    std::fs::write(&target, DEFAULT_WATCH_INI).ok()?;
+    Some(target)
+}
+
+/// The starting configuration, written on first run.
+///
+/// `confirm` mode and an explicit gate: nothing runs until approved, and there
+/// is no variant of this file that runs a block ungated.
+pub const DEFAULT_WATCH_INI: &str = "\
+# tgw - the watchdog. See `tgw --help` and docs/tgw.md.
+#
+# Start in confirm: nothing runs until you tap approve. Move to auto only
+# after `tgw status` says the approval lock is open.
+
+clip_get_cmd = clipg
+gate_cmd = tgr --check {file}
+
+# Rule names from `tgr --list-rules`. A pass that mentions one of these
+# waits for a tap instead of running in auto.
+hold_rules = rm, mv, git-clean, git-reset, git-checkout, sed-i
+
+mode = confirm
+poll_ms = 500
+timeout_s = 120
+hold_ttl_s = 300
+";
 
 /// Reads `watch.ini`, returning the path it read (or would have) with it.
 ///

@@ -102,6 +102,14 @@ if [ "$DOWNLOAD_SUCCESS" -eq 1 ]; then
     
     install -m 755 "$TMP_DIR/trex-guard" "$BIN_DIR/trex-guard"
     install -m 755 "$TMP_DIR/tg" "$BIN_DIR/tg"
+
+    # The Rust tools ship in the same tarball when present. They are optional
+    # for `tg`, so a missing one is a warning rather than an error.
+    for tool in tgr tgw tcx; do
+        if [ -f "$TMP_DIR/$tool" ]; then
+            install -m 755 "$TMP_DIR/$tool" "$BIN_DIR/$tool"
+        fi
+    done
     
     if [ -f "$TMP_DIR/config.ini" ]; then
         install -m 644 "$TMP_DIR/config.ini" "$DATA_DIR/config.ini"
@@ -132,12 +140,37 @@ else
     install -m 755 "$TMP_DIR/source/scripts/tg" "$BIN_DIR/tg"
     install -m 644 "$TMP_DIR/source/examples/config.ini" "$DATA_DIR/config.ini"
     install -m 644 "$TMP_DIR/source/scripts/shell-integration.bash" "$DATA_DIR/shell-integration.bash"
+
+    if command -v cargo >/dev/null 2>&1; then
+        log_info "Building the Rust tools (tgr, tgw, tcx)..."
+        if cargo build --release --manifest-path "$TMP_DIR/source/Cargo.toml" -q; then
+            for tool in tgr tgw tcx; do
+                if [ -f "$TMP_DIR/source/target/release/$tool" ]; then
+                    install -m 755 "$TMP_DIR/source/target/release/$tool" "$BIN_DIR/$tool"
+                fi
+            done
+        else
+            log_warn "Rust tools failed to build; tg still works on its own."
+        fi
+    else
+        log_warn "cargo not found; skipping tgr, tgw and tcx."
+    fi
 fi
 
 # Initialize user config if not present
 if [ ! -f "$CONFIG_DIR/config.ini" ] && [ -f "$DATA_DIR/config.ini" ]; then
     cp "$DATA_DIR/config.ini" "$CONFIG_DIR/config.ini"
     log_info "Created default configuration: $CONFIG_DIR/config.ini"
+fi
+
+# The watchdog's own config. Written if absent, never overwritten, and placed
+# where `tgw` itself resolves it so no environment variable has to be set.
+if [ -x "$BIN_DIR/tgw" ]; then
+    if "$BIN_DIR/tgw" check-config >/dev/null 2>&1; then
+        log_info "Watchdog configuration ready"
+    else
+        log_warn "Run 'tgw check-config' to see what the watchdog still needs."
+    fi
 fi
 
 # Check if BIN_DIR is in PATH

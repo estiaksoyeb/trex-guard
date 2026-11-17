@@ -13,6 +13,27 @@ chat block --> clipboard --> tgw --> tgr --check
                                    |--> block    (gate danger, or anything unclear)
 ```
 
+## First run needs no setup
+
+There is nothing to configure before starting. On first use `tgw` writes
+`watch.ini` itself — `confirm` mode, `clipg` as the clipboard reader, and
+`tgr --check {file}` as the gate — and `tgw check-config` (the command the
+error messages point at) is the thing that creates it. An existing file is
+**never** overwritten.
+
+The file is looked for in every conventional place, in order:
+
+1. `$TCX_HOME/config/watch.ini`
+2. `$XDG_CONFIG_HOME/tcx/watch.ini`
+3. `~/.config/tcx/watch.ini`
+4. `~/.local/share/tcx-home/config/watch.ini`
+
+The first two matter more than they look. Setting `TCX_HOME` for `tcx` used to
+hide a `watch.ini` sitting in `~/.config/tcx/` from `tgw`, which read as "the
+file is right there and the tool cannot see it". If `TCX_HOME` is set
+explicitly, that is treated as a statement of where config lives and the search
+stops there rather than reading a config the user did not point it at.
+
 ## What it is for
 
 The block-based workflow asks the human to paste a block into a terminal. That
