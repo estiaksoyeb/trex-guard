@@ -361,3 +361,168 @@ fn a_config_that_fails_to_parse_never_runs_a_block() {
         );
     }
 }
+
+#[test]
+fn a_held_block_can_be_approved() {
+    // The reported failure: "it showed hold but never ran". A hold is not a
+    // run, so `approve` has to be able to find the record and execute it.
+    let sb = Sandbox::new("approveflow");
+    sb.config("mode = confirm\nhold_ttl_s = 300");
+    let w = sb.witness();
+    let out = sb.run(&["once"], &touch(&w), "0", "");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(!w.exists(), "a confirm-mode block ran without approval:\n{stdout}");
+
+    let id = stdout
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("id: "))
+        // The line is `id: <hex>  (<ms> ms)`; take the id only.
+        .and_then(|s| s.split_whitespace().next())
+        .map(str::to_string)
+        .unwrap_or_else(|| panic!("no hold id printed:\n{stdout}"));
+
+    let approved = sb.run(&["approve", &id], &touch(&w), "0", "");
+    let aout = String::from_utf8_lossy(&approved.stdout);
+    assert_eq!(
+        approved.status.code(),
+        Some(0),
+        "approve failed for {id}:\n{aout}{}",
+        String::from_utf8_lossy(&approved.stderr)
+    );
+    assert!(w.exists(), "the approved block did not run:\n{aout}");
+}
+
+#[test]
+fn a_block_is_offered_again_once_its_hold_is_gone() {
+    // Every staged hash used to be marked seen permanently, so a block that
+    // was held and expired could never be offered again: copying it a second
+    // time was silently ignored. That is why `tgw` looked like it stopped
+    // working after the first attempt.
+    let sb = Sandbox::new("reoffer");
+    sb.config("mode = confirm\nhold_ttl_s = 300");
+    let w = sb.witness();
+    let block = touch(&w);
+
+    let first = sb.run(&["once"], &block, "0", "");
+    let fout = String::from_utf8_lossy(&first.stdout);
+    assert!(fout.contains("hold"), "first pass was not held:\n{fout}");
+
+    // The clipboard still holds the same block on the next poll: dedupe must
+    // stop it being offered twice in a row.
+    let again = sb.run(&["once"], &block, "0", "");
+    let aout = String::from_utf8_lossy(&again.stdout);
+    assert!(
+        aout.contains("duplicate") || aout.contains("ignore"),
+        "the same block was offered twice in a row:\n{aout}"
+    );
+
+    // Drop the hold as expiry would, then erase the seen marker's age so the
+    // block is past its window without sleeping for it.
+    let stage = sb.dir.join("data/watch/stage");
+    for e in std::fs::read_dir(&stage).unwrap().flatten() {
+        if e.path().extension().is_some_and(|x| x == "seen") {
+            std::fs::write(e.path(), "0").unwrap();
+        }
+    }
+    let third = sb.run(&["once"], &block, "0", "");
+    let tout = String::from_utf8_lossy(&third.stdout);
+    assert!(
+        tout.contains("hold"),
+        "a block was never offered again after its seen marker aged out:\n{tout}"
+    );
+}
+
+#[test]
+fn an_expired_hold_is_reported_not_deleted_silently() {
+    // A hold that is announced and then vanishes is indistinguishable from
+    // `tgw` never having seen the block.
+    let sb = Sandbox::new("expired");
+    sb.config("mode = confirm\nhold_ttl_s = 300");
+    let w = sb.witness();
+    sb.run(&["once"], &touch(&w), "0", "");
+
+    // Age the hold past its expiry rather than waiting 300 s.
+    let holds = sb.dir.join("data/watch/holds");
+    let mut aged = 0;
+    for e in std::fs::read_dir(&holds).unwrap().flatten() {
+        let text = std::fs::read_to_string(e.path()).unwrap();
+        let out: String = text
+            .lines()
+            .map(|l| {
+                if let Some(v) = l.strip_prefix("expires=") {
+                    let old: u64 = v.parse().unwrap();
+                    format!("expires={}", old.saturating_sub(300))
+                } else {
+                    l.to_string()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        std::fs::write(e.path(), out).unwrap();
+        aged += 1;
+    }
+    assert!(aged > 0, "no hold was recorded to expire");
+
+    // `run` sweeps at startup and then loops forever, so it is started and
+    // read until either the message appears or a deadline passes. Waiting for
+    // the process to exit would hang the suite.
+    let clip = sb.dir.join("clip.txt");
+    std::fs::write(&clip, "").unwrap();
+    let mut child = Command::new(tgw())
+        .args(["run", "--interval", "50"])
+        .env("TCX_HOME", &sb.dir)
+        .env("TGW_CLIP", clip)
+        .env("TGW_GATE_EXIT", "0")
+        .env("TGW_GATE_ERR", "")
+        .stderr(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .spawn()
+        .expect("start tgw run");
+
+    let mut stderr = String::new();
+    {
+        use std::io::Read;
+        let pipe = child.stderr.as_mut().unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let mut buf = [0u8; 512];
+        while std::time::Instant::now() < deadline && !stderr.contains("expired") {
+            match pipe.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => stderr.push_str(&String::from_utf8_lossy(&buf[..n])),
+                Err(_) => break,
+            }
+        }
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+
+    assert!(
+        stderr.contains("expired"),
+        "an expired hold was dropped without a word:\n{stderr}"
+    );
+}
+
+#[test]
+fn a_hold_that_cannot_be_saved_is_an_error_not_an_id() {
+    // `holds::save` used to be `let _ = ...`. The hold was announced with an
+    // id, `tgw approve` could not find it, and the only visible symptom was
+    // that nothing ever ran.
+    let sb = Sandbox::new("savefail");
+    sb.config("mode = confirm\nhold_ttl_s = 300");
+    let w = sb.witness();
+
+    // Make the holds directory unwritable by replacing it with a file, so
+    // `create_dir_all` cannot succeed.
+    let holds = sb.dir.join("data/watch/holds");
+    std::fs::create_dir_all(sb.dir.join("data/watch")).unwrap();
+    std::fs::write(&holds, "not a directory").unwrap();
+
+    let out = sb.run(&["once"], &touch(&w), "0", "");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let logged = sb.log();
+    assert!(!w.exists(), "a block ran while its hold could not be saved:\n{stdout}");
+    assert!(
+        logged.contains("cannot save hold"),
+        "a failed hold save was swallowed (log: {logged})"
+    );
+}

@@ -270,15 +270,19 @@ exact bytes.
 
 ```text
 state_dir/
-  stage/       0600 blocks, one per content hash, plus a .seen marker
+  stage/       0600 blocks, one per content hash, plus a dated .seen marker
   holds/       0700; one key=value record per pending hold
   approvals    how many approvals have actually run
   tgw.lock     the single-instance pid
 ```
 
-Staging a block under its content hash means the same block cannot be staged
-twice. A `.seen` marker survives a restart, so a watchdog restarted with the
-same clipboard does not re-run the last block.
+Staging a block under its content hash means the same content is offered once,
+not once per poll. A `.seen` marker records *when* the block was staged and
+expires after 300 s, so a watchdog restarted with the same clipboard does not
+re-run the last block, but a block that was held and never approved can be
+copied again and offered afresh. Staging the same bytes again is allowed; the
+same id with *different* bytes is refused, so a colliding id cannot make the
+gate read one block while the shell runs another.
 
 ## One instance
 

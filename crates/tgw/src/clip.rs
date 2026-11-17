@@ -253,15 +253,33 @@ pub fn stage(state_dir: &Path, text: &str, hash: u64) -> std::io::Result<Staged>
     let path = dir.join(format!("{id}.sh"));
     // `create_new` so a predictable id cannot be used to overwrite a file
     // another process staged.
-    let mut f = std::fs::OpenOptions::new()
+    match std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
-        .open(&path)?;
-    restrict_file(&path)?;
+        .open(&path)
     {
-        use std::io::Write;
-        f.write_all(text.as_bytes())?;
-        f.sync_all()?;
+        Ok(mut f) => {
+            restrict_file(&path)?;
+            use std::io::Write;
+            f.write_all(text.as_bytes())?;
+            f.sync_all()?;
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            // The same content staged earlier, whose file is still there
+            // because the hold was never resolved. Re-offering it is allowed
+            // only if the bytes are identical: the id is derived from the
+            // content hash, but a forged or colliding id must not silently
+            // make the gate classify one block and the shell run another.
+            let existing = std::fs::read(&path)?;
+            if existing != text.as_bytes() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::AlreadyExists,
+                    format!("staged file {id} exists with different content"),
+                ));
+            }
+            restrict_file(&path)?;
+        }
+        Err(e) => return Err(e),
     }
     Ok(Staged {
         id,
@@ -276,23 +294,38 @@ pub fn stage(state_dir: &Path, text: &str, hash: u64) -> std::io::Result<Staged>
 /// A plain marker file, kept separate from the `.sh` because the block copy
 /// may be pruned by log retention while the "already seen" fact must outlive
 /// it. Write failure is not fatal: the worst case is one duplicate.
+/// How long a staged block stays "already seen".
+///
+/// It only has to cover the clipboard still holding the block, and the block's
+/// own output replacing it. After that the block may be offered again, which
+/// matters because a hold can expire: without this, a block that was held and
+/// never approved could never be offered a second time, so copying it again
+/// looked like `tgw` doing nothing at all.
+pub const SEEN_TTL_S: u64 = 300;
+
+fn seen_path(state_dir: &Path, hash: u64) -> PathBuf {
+    state_dir.join("stage").join(format!("{hash:016x}.seen"))
+}
+
+/// Marks `hash` as seen now, recording *when* so the marker can expire.
 pub fn mark_seen(state_dir: &Path, hash: u64) -> std::io::Result<()> {
     let dir = state_dir.join("stage");
     std::fs::create_dir_all(&dir)?;
-    let path = dir.join(format!("{hash:016x}.seen"));
-    std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-        .map(drop)
+    std::fs::write(seen_path(state_dir, hash), crate::log::now_unix().to_string())
 }
 
-/// Whether `hash` was staged before.
+/// Whether `hash` was staged within [`SEEN_TTL_S`].
+///
+/// An unreadable or unparseable marker is treated as *not* seen: offering a
+/// block twice is recoverable, permanently ignoring one is not.
 pub fn was_seen(state_dir: &Path, hash: u64) -> bool {
-    state_dir
-        .join("stage")
-        .join(format!("{hash:016x}.seen"))
-        .exists()
+    let Ok(text) = std::fs::read_to_string(seen_path(state_dir, hash)) else {
+        return false;
+    };
+    match text.trim().parse::<u64>() {
+        Ok(at) => crate::log::now_unix().saturating_sub(at) < SEEN_TTL_S,
+        Err(_) => false,
+    }
 }
 
 /// Creates the state directory tree with 0700.
@@ -416,8 +449,24 @@ mod tests {
             assert_eq!(dmode & 0o777, 0o700, "stage dir is not 0700");
         }
 
-        // The same content cannot be staged twice under one id.
-        assert!(stage(&dir, text, h).is_err(), "a staged file was overwritten");
+        // Identical content may be staged again: a hold that expired leaves
+        // its staged file behind, and re-copying the block has to work. The
+        // file must still be the same bytes afterwards.
+        let s2 = stage(&dir, text, h).expect("re-staging identical content");
+        assert_eq!(std::fs::read_to_string(&s2.path).unwrap(), text);
+
+        // Different content under the same id is refused, so a colliding or
+        // forged id cannot make the gate read one block and the shell another.
+        let other = "set +H\necho something-else\n";
+        assert!(
+            stage(&dir, other, h).is_err(),
+            "different content was written over an existing staged file"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&s1.path).unwrap(),
+            text,
+            "the staged file was modified"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

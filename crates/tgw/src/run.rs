@@ -181,17 +181,19 @@ pub fn check_state_dir(cfg: &Config) -> Vec<String> {
     problems
 }
 
-/// Drops expired holds and their staged files, returning how many went.
+/// Drops expired holds and their staged files, returning the ids that went.
 ///
-/// Called once at startup and then rarely: expired holds are harmless, and
-/// deleting them while the human is looking at `status` would be confusing.
-pub fn sweep_expired(cfg: &Config) -> usize {
+/// Called once at startup. The ids are returned rather than just counted so
+/// the caller can *say* what was dropped: a hold that was announced, then
+/// silently deleted before the human approved it, is why `tgw` looked like it
+/// never did anything. An expired hold is not an error, but it must be visible.
+pub fn sweep_expired(cfg: &Config) -> Vec<String> {
     let state = cfg.state_dir();
     let now = crate::log::now_unix();
     let Ok(entries) = std::fs::read_dir(holds::holds_dir(&state)) else {
-        return 0;
+        return Vec::new();
     };
-    let mut n = 0;
+    let mut gone = Vec::new();
     for e in entries.flatten() {
         let Some(stem) = e.path().file_stem().map(|s| s.to_string_lossy().into_owned()) else {
             continue;
@@ -199,11 +201,12 @@ pub fn sweep_expired(cfg: &Config) -> usize {
         if let Ok(h) = holds::load(&state, &stem) {
             if h.expires <= now {
                 holds::remove(&state, &h);
-                n += 1;
+                gone.push(h.id);
             }
         }
     }
-    n
+    gone.sort();
+    gone
 }
 
 #[cfg(test)]

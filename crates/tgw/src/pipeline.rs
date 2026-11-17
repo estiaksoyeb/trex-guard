@@ -267,7 +267,25 @@ fn outcome_from_gate(
             mode: ctx.cfg.mode,
             created: crate::log::now_unix(),
         };
-        let _ = crate::holds::save(&ctx.cfg.state_dir(), &hold);
+        // A saved hold is the contract: the id is announced, so `approve`
+        // must be able to find it. Discarding this error printed an id that
+        // led nowhere, which is indistinguishable from `tgw` doing nothing.
+        if let Err(e) = crate::holds::save(&ctx.cfg.state_dir(), &hold) {
+            let reason = format!("cannot save hold: {e}");
+            let mut entry = Entry::new(Verdict::Block, reason.clone());
+            entry.id = hold.id.clone();
+            entry.hash = hold.hash;
+            entry.duration_ms = started.elapsed().as_millis() as u64;
+            let _ = ctx.log.append(&entry);
+            return Outcome {
+                verdict: Verdict::Block,
+                reason,
+                id: hold.id,
+                hash: staged.hash,
+                duration_ms: started.elapsed().as_millis() as u64,
+                staged: Some(staged),
+            };
+        }
     }
 
     Outcome {

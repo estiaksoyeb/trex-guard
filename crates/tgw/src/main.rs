@@ -207,9 +207,12 @@ fn cmd_run(rest: &[String]) -> i32 {
         }
     };
     tgw::run::install_signal_handler();
-    let swept = tgw::run::sweep_expired(&cfg);
-    if swept > 0 {
-        eprintln!("tgw: cleared {swept} expired hold(s)");
+    for id in tgw::run::sweep_expired(&cfg) {
+        // Say so, with what to do about it. Deleting a hold quietly is
+        // indistinguishable from never having held the block.
+        eprintln!(
+            "tgw: hold {id} expired before it was approved; copy the block again to re-offer it"
+        );
     }
 
     eprintln!(
@@ -300,6 +303,16 @@ fn announce(cfg: &config::Config, out: &pipeline::Outcome) {
         return;
     }
     eprintln!("tgw: {}", tgw::log::summary(out.verdict, &out.reason, &out.id));
+    // A hold is not a run: say what the human has to do, or the announcement
+    // reads as "done" when nothing has executed.
+    if out.verdict == tgw::log::Verdict::Hold && !out.id.is_empty() {
+        let ttl = cfg.hold_ttl_s;
+        eprintln!(
+            "tgw:   nothing has run. `tgw approve {}` to run it, \
+             `tgw deny {}` to discard it (expires in {ttl}s)",
+            out.id, out.id
+        );
+    }
     notify(cfg, out.verdict.as_str(), &out.id);
 }
 
