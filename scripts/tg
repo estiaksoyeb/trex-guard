@@ -46,18 +46,27 @@ for arg in "$@"; do
     fi
 done
 
-if [ "$TREX_GUARD_ACTIVE" = "1" ] && [ "$is_force" -eq 0 ]; then
-    echo "Notice: A guarded shell is already active in this terminal session." >&2
-    echo "To launch anyway, run: tg --force" >&2
-    exit 0
+# Prevent accidental recursive wrapping. Each guard sets its own marker, so
+# both are checked: a `tg` inside a C++ session and a `tg` inside a `tgr`
+# session are the same mistake.
+if [ "${TREX_GUARD_ACTIVE:-}" = "1" ] || [ "${TGR_ACTIVE:-}" = "1" ]; then
+    if [ "$is_force" -eq 0 ]; then
+        echo "Notice: A guarded shell is already active in this terminal session." >&2
+        echo "To launch anyway, run: tg --force" >&2
+        exit 0
+    fi
 fi
 
-# Locate trex-guard binary: PATH, or repo build directory
+# Locate the guard. `tgr` is the Rust port and is what releases ship; the C++
+# `trex-guard` is preferred when it is present so an existing install keeps
+# working unchanged during the transition. `tgr` is a standalone program that
+# reads the same config.ini, so the two are interchangeable here.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
 if command -v trex-guard >/dev/null 2>&1; then
     exec trex-guard "$@"
 fi
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 if [ -x "$SCRIPT_DIR/../build/trex-guard" ]; then
     exec "$SCRIPT_DIR/../build/trex-guard" "$@"
 fi
@@ -66,5 +75,14 @@ if [ -x "$SCRIPT_DIR/trex-guard" ]; then
     exec "$SCRIPT_DIR/trex-guard" "$@"
 fi
 
-echo "Error: trex-guard executable not found in PATH or adjacent directories." >&2
+# Rust guard: installed beside this launcher, or on PATH.
+if [ -x "$SCRIPT_DIR/tgr" ]; then
+    exec "$SCRIPT_DIR/tgr" "$@"
+fi
+
+if command -v tgr >/dev/null 2>&1; then
+    exec tgr "$@"
+fi
+
+echo "Error: neither trex-guard nor tgr was found in PATH or adjacent directories." >&2
 exit 1

@@ -1,86 +1,147 @@
 ---
 name: Release
 
+# Ships the three Rust tools only. The C++ guard is deliberately not built
+# here: `tg` runs `tgr`, which is a standalone port, so a release needs no
+# CMake and no g++.
 "on":
   push:
     tags:
-      - 'v*'
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build (must already exist)"
+        required: true
+
+permissions:
+  contents: write
 
 jobs:
-  build-release:
-    name: Build & Package (${{ matrix.target.name }})
-    runs-on: ${{ matrix.target.os }}
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        target:
-          - name: linux-x86_64
-            os: ubuntu-latest
-            arch: x86_64
-            cmake_flags: >-
-              -DCMAKE_EXE_LINKER_FLAGS='-static-libgcc -static-libstdc++'
-          - name: linux-aarch64
+        include:
+          - target: aarch64-unknown-linux-musl
             os: ubuntu-24.04-arm
-            arch: aarch64
-            cmake_flags: >-
-              -DCMAKE_EXE_LINKER_FLAGS='-static-libgcc -static-libstdc++'
-
+            name: linux-aarch64
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-24.04
+            name: linux-x86_64
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Configure CMake
-        run: |
-          cmake -B build \
-            -DCMAKE_BUILD_TYPE=Release \
-            ${{ matrix.target.cmake_flags }}
-
-      - name: Build Targets
-        run: |
-          cmake --build build --config Release
-
-      - name: Run Test Suite
-        run: |
-          ./build/test_rules
-
-      - name: Prepare Release Package
-        run: |
-          STAGE_DIR="trex-guard-${{ matrix.target.arch }}"
-          ARCHIVE_NAME="trex-guard-${{ matrix.target.arch }}.tar.gz"
-          mkdir -p "${STAGE_DIR}"
-          cp build/trex-guard "${STAGE_DIR}/"
-          cp scripts/tg "${STAGE_DIR}/"
-          cp examples/config.ini "${STAGE_DIR}/"
-          cp scripts/shell-integration.bash "${STAGE_DIR}/"
-          cp README.md "${STAGE_DIR}/"
-          tar -czf "${ARCHIVE_NAME}" -C "${STAGE_DIR}" .
-
-      - name: Upload Release Artifact
-        uses: actions/upload-artifact@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          name: trex-guard-${{ matrix.target.arch }}.tar.gz
-          path: trex-guard-${{ matrix.target.arch }}.tar.gz
+          targets: ${{ matrix.target }}
 
-  publish-release:
-    name: Publish GitHub Release
-    needs: build-release
+      - name: Install musl tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      # Static binaries so the release runs on any Linux the user has,
+      # including an old glibc in a chroot. Verified below.
+      - name: Build
+        run: cargo build --release --workspace --target ${{ matrix.target }}
+
+      - name: Package
+        run: |
+          set -eu
+          stage="trex-guard-${{ matrix.name }}"
+          rm -rf "$stage"
+          mkdir -p "$stage"
+          for tool in tgr tgw tcx; do
+            cp "target/${{ matrix.target }}/release/$tool" "$stage/"
+          done
+          cp scripts/tg "$stage/tg"
+          cp examples/config.ini "$stage/config.ini"
+          for f in "$stage"/*; do
+            file "$f"
+          done
+          tar -czf "$stage.tar.gz" "$stage"
+          sha256sum "$stage.tar.gz" > "$stage.tar.gz.sha256"
+
+      - name: Verify static
+        run: |
+          set -eu
+          if ldd "target/${{ matrix.target }}/release/tgr" 2>&1 | grep -q "not a dynamic"; then
+            echo "tgr is static"
+          else
+            echo "::error::tgr is not statically linked; it will break on older glibc"
+            ldd "target/${{ matrix.target }}/release/tgr" || true
+            exit 1
+          fi
+
+      - name: Smoke test
+        run: |
+          set -eu
+          stage="trex-guard-${{ matrix.name }}"
+          "$stage/tgr" --version
+          "$stage/tgw" --version
+          "$stage/tcx" --version
+
+          # The shipped guard must still call this danger. Asserting the exact
+          # exit code, not just "non-zero": review is 3, danger is 1, and a
+          # build that downgraded danger to review would slip past `if ! cmd`.
+          printf 'rm -rf /tmp/x\n' > /tmp/block.txt
+          code=0
+          "$stage/tgr" --check /tmp/block.txt || code=$?
+          if [ "$code" -ne 1 ]; then
+            echo "::error::expected danger (exit 1) for 'rm -rf', got exit $code"
+            exit 1
+          fi
+
+          # ...and a harmless one must still be safe, so a broken build that
+          # flags everything cannot pass the check above.
+          printf 'echo hello\n' > /tmp/ok.txt
+          code=0
+          "$stage/tgr" --check /tmp/ok.txt || code=$?
+          if [ "$code" -ne 0 ]; then
+            echo "::error::expected safe (exit 0) for 'echo', got exit $code"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: |
+            trex-guard-${{ matrix.name }}.tar.gz
+            trex-guard-${{ matrix.name }}.tar.gz.sha256
+
+  publish:
+    name: Publish release
+    needs: build
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Download Build Artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
 
+      - name: Checksums for all assets
+        run: |
+          set -eu
+          cd artifacts
+          sha256sum *.tar.gz > SHA256SUMS
+          cat SHA256SUMS
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/*.tar.gz
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          files: |
+            artifacts/*.tar.gz
+            artifacts/SHA256SUMS
           generate_release_notes: true
           draft: false
           prerelease: false

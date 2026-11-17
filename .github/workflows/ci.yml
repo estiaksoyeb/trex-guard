@@ -1,0 +1,80 @@
+---
+name: CI
+
+# The gate. Nothing is tagged or released unless this is green on the commit
+# being released, so this workflow deliberately runs the same tests a human
+# would run before shipping.
+"on":
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Rust (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      # The parity suites compare `tgr` against the C++ guard. Without a
+      # `trex-guard` binary they print SKIP and pass, which is a green that
+      # proves nothing, so the reference is built here rather than in a
+      # separate job that could not share the filesystem.
+      - name: Build C++ reference guard
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake g++
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release
+
+      # The C++ guard's own acceptance table. `cpp_suite` ports these cases into
+      # Rust, but running them against the C++ binary is what keeps the port
+      # honest, and it is the only thing that proves the reference still works.
+      - name: C++ rule tests
+        run: ./build/test_rules
+
+      # The pty suites drive real guards through a terminal. They are the only
+      # tests that would have caught the exit and SIGTERM hangs, so they run
+      # rather than being skipped for being slow.
+      - name: Build
+        run: cargo build --workspace --all-targets
+
+      - name: Test
+        run: cargo test --workspace
+
+      # Lints are reported, not enforced. There are ~30 pre-existing style
+      # warnings (collapsible ifs, Default::default field assignment); failing
+      # a release on those would be noise, but hiding them entirely would
+      # lose the signal. A lint that can hide a defect should be promoted to
+      # an error individually and fixed then.
+      - name: Lints
+        run: cargo clippy --workspace --all-targets
+
+  installer:
+    name: Installer script
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Shell syntax
+        run: |
+          sh -n scripts/install.sh
+          sh -n scripts/tg
+
+      - name: Installer self-test
+        run: ./tests/install_test.sh
