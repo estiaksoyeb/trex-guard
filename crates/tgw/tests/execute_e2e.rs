@@ -526,3 +526,24 @@ fn a_hold_that_cannot_be_saved_is_an_error_not_an_id() {
         "a failed hold save was swallowed (log: {logged})"
     );
 }
+
+#[test]
+fn once_says_a_hold_has_not_run() {
+    // `once` is how a human tests the thing. It printed a bare "hold", which
+    // reads as "done" when nothing had executed; only `run` explained the
+    // next step. Both entry points must say it.
+    let sb = Sandbox::new("oncehold");
+    sb.config("mode = confirm\nhold_ttl_s = 300");
+    let w = sb.witness();
+    let out = sb.run(&["once"], &touch(&w), "0", "");
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!w.exists(), "a confirm-mode block ran without approval:\n{text}");
+    assert!(
+        text.contains("nothing has run") && text.contains("tgw approve"),
+        "a hold printed no next step:\n{text}"
+    );
+}

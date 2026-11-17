@@ -292,6 +292,10 @@ fn report_once(ctx: &mut Context<'_>) -> i32 {
             if let Some(s) = &out.staged {
                 println!("staged: {}", s.path.display());
             }
+            // The same instruction `run` prints. `once` is how a human tests
+            // the thing, so a bare "hold" here is exactly the reading that
+            // makes a hold look like a run.
+            print_hold_next_step(ctx.cfg, &out);
             0
         }
     }
@@ -303,8 +307,15 @@ fn announce(cfg: &config::Config, out: &pipeline::Outcome) {
         return;
     }
     eprintln!("tgw: {}", tgw::log::summary(out.verdict, &out.reason, &out.id));
-    // A hold is not a run: say what the human has to do, or the announcement
-    // reads as "done" when nothing has executed.
+    print_hold_next_step(cfg, out);
+    notify(cfg, out.verdict.as_str(), &out.id);
+}
+
+/// Says that a hold has not run, and how to run or discard it.
+///
+/// One function so `run` and `once` cannot drift apart: a hold announced with
+/// no instruction reads as "done" when nothing has executed.
+fn print_hold_next_step(cfg: &config::Config, out: &pipeline::Outcome) {
     if out.verdict == tgw::log::Verdict::Hold && !out.id.is_empty() {
         let ttl = cfg.hold_ttl_s;
         eprintln!(
@@ -313,7 +324,6 @@ fn announce(cfg: &config::Config, out: &pipeline::Outcome) {
             out.id, out.id
         );
     }
-    notify(cfg, out.verdict.as_str(), &out.id);
 }
 
 /// `tgw approve ID`: re-check a hold, then run it.
