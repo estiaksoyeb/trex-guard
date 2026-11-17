@@ -48,7 +48,9 @@
 //!
 //! `scripts/tg` refuses to start a guard inside a guard. When the user wants
 //! it anyway - to test, or to nest deliberately - `--force` is the explicit
-//! override. `tgr` accepts the same flag so scripts that pass it keep working.
+//! override. `tgr` does the same, checking its own `TGR_ACTIVE=1` so a `tg`
+//! session and a `tgr` session stay distinguishable: each guard only reacts to
+//! its own marker, so neither can mistake the other for itself.
 //!
 //! # Signals
 //!
@@ -92,7 +94,7 @@ Usage:
   tgr --version     Show version ({VERSION})
 
 Options:
-  --force           Start even when a guard is already active
+  --force           Start even when a tgr session is already active
                     (scripts pass this; it is stripped from the command)
 
 --check exit codes (for programs that gate on them):
@@ -353,6 +355,29 @@ fn run_list_rules() -> i32 {
     if ok.is_empty() { 1 } else { 0 }
 }
 
+/// The notice `tgr` prints instead of starting inside another guard, if it
+/// should refuse.
+///
+/// `active` is the inherited `TGR_ACTIVE` value. `--force` appears anywhere in
+/// `argv` and overrides, matching `tg`'s handling of its own flag. Returns
+/// `None` when there is no reason to refuse.
+///
+/// Exit code 0, like `tg`: refusing to nest is a normal refusal, not a usage
+/// error, and a script chaining `tgr` should not see a failure.
+fn nested_notice(active: Option<&str>, argv: &[String]) -> Option<String> {
+    if active != Some("1") {
+        return None;
+    }
+    if argv.iter().any(|a| a == "--force") {
+        return None;
+    }
+    Some(
+        "Notice: A guarded shell is already active in this terminal session.\n\
+         To launch anyway, run: tgr --force\n"
+            .to_string(),
+    )
+}
+
 fn main() {
     let argv: Vec<String> = std::env::args().skip(1).collect();
 
@@ -374,6 +399,16 @@ fn main() {
             return;
         }
         _ => {}
+    }
+
+    // Refuse to wrap a guard in a guard unless asked, exactly as `tg` does.
+    // Without this `tgr` starts silently inside a `tgr` session, which is how
+    // a user ends up two guards deep and unsure which one they are talking to.
+    // `tg` warns on `TREX_GUARD_ACTIVE`; `tgr` warns on its own marker so the
+    // two sessions stay distinguishable.
+    if let Some(notice) = nested_notice(std::env::var(tgr::pty::ACTIVE_ENV).ok().as_deref(), &argv) {
+        eprint!("{notice}");
+        std::process::exit(0);
     }
 
     let default_shell = std::env::var("SHELL")
@@ -573,5 +608,46 @@ mod tests {
     fn check_reports_a_missing_file() {
         let err = read_check_input("/nonexistent/tgr-no-such-file").unwrap_err();
         assert!(!err.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod nested_tests {
+    use super::nested_notice;
+
+    fn args(items: &[&str]) -> Vec<String> {
+        items.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn no_marker_means_no_notice() {
+        assert_eq!(nested_notice(None, &args(&[])), None);
+        assert_eq!(nested_notice(Some(""), &args(&[])), None);
+        // Only the exact value `tgr` exports counts.
+        assert_eq!(nested_notice(Some("0"), &args(&[])), None);
+        assert_eq!(nested_notice(Some("yes"), &args(&[])), None);
+    }
+
+    #[test]
+    fn inside_a_guard_it_refuses() {
+        let notice = nested_notice(Some("1"), &args(&[])).expect("must refuse to nest");
+        assert!(notice.contains("already active"), "{notice:?}");
+        assert!(notice.contains("tgr --force"), "{notice:?}");
+    }
+
+    #[test]
+    fn force_overrides_whenever_it_appears() {
+        // `--force` is stripped from the child argv wherever it sits, so the
+        // override has to be recognised in the same positions.
+        assert_eq!(nested_notice(Some("1"), &args(&["--force"])), None);
+        assert_eq!(nested_notice(Some("1"), &args(&["bash", "--force"])), None);
+        assert_eq!(nested_notice(Some("1"), &args(&["--force", "bash"])), None);
+    }
+
+    #[test]
+    fn a_force_lookalike_does_not_override() {
+        // Substring matching would let `--forceful` slip through.
+        assert!(nested_notice(Some("1"), &args(&["--forceful"])).is_some());
+        assert!(nested_notice(Some("1"), &args(&["--no-force"])).is_some());
     }
 }

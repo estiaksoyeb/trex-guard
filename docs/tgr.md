@@ -189,6 +189,21 @@ shell unchanged and ends `tgr` the same way.
 | `SIGHUP` | `SIGHUP` (bash exits on it) | `129` |
 | `SIGINT` | `SIGINT`, then `SIGKILL` after 500 ms | `137` |
 
+### 7. `tgr` refuses to nest, and says so
+
+`scripts/tg` refuses to start a guard inside a guard and points at `--force`.
+`tgr` originally documented `--force` as existing "so scripts that pass it keep
+working" but never checked its own marker, so `tgr` inside `tgr` started
+silently — a second guard running with no sign of it.
+
+`tgr` now refuses when `TGR_ACTIVE=1` is inherited, printing the same shape of
+notice as `tg`, and `--force` anywhere in the argument list overrides it. The
+exit code is 0, like `tg`: refusing to nest is a normal refusal, not an error.
+
+The two guards only ever look at **their own** marker. `tgr` inside `tg` is
+allowed and starts normally, which is what keeps the two sessions
+distinguishable.
+
 ### 6. The relay reads on hang-up, not only on data
 
 The C++ loop uses `select` and acts on `FD_ISSET`, so a hung-up descriptor is

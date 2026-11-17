@@ -471,3 +471,98 @@ fn sigterm_ends_the_guard_and_the_shell() {
     );
     assert_eq!(orphans, 0, "the guarded shell survived tgr");
 }
+
+/// Runs `tgr` in a pty with `env` added and returns `(started, output)`.
+///
+/// `started` is true if a guard was still running after a short wait, i.e. it
+/// did not refuse. Anything printed before exiting is returned either way.
+fn start_with_env(env: &[(&str, &str)], argv: &[&str]) -> (bool, String) {
+    let script = format!(
+        r#"
+import sys, os, pty, time, select
+pid, fd = pty.fork()
+if pid == 0:
+    e = dict(os.environ)
+    e.pop("TGR_ACTIVE", None)
+    e.pop("TREX_GUARD_ACTIVE", None)
+    e.update({env})
+    os.execve({binary}, {argv}, e)
+out = b""
+t0 = time.time()
+while time.time() - t0 < 3:
+    r, _, _ = select.select([fd], [], [], 0.05)
+    if r:
+        try:
+            c = os.read(fd, 65536)
+        except OSError:
+            break
+        if not c:
+            break
+        out += c
+    w, _ = os.waitpid(pid, os.WNOHANG)
+    if w:
+        sys.stdout.write("REFUSED:" + out.decode("utf-8", "replace"))
+        sys.exit(0)
+# A refusal prints and exits immediately; give the reap a moment rather than
+# calling a guard that is on its way out "started".
+for _ in range(40):
+    time.sleep(0.05)
+    w, _ = os.waitpid(pid, os.WNOHANG)
+    if w:
+        sys.stdout.write("REFUSED:" + out.decode("utf-8", "replace"))
+        sys.exit(0)
+sys.stdout.write("STARTED:" + out.decode("utf-8", "replace"))
+os.kill(pid, 9)
+os.waitpid(pid, 0)
+"#,
+        env = format!(
+            "{{{}}}",
+            env.iter()
+                .map(|(k, v)| format!("{}: {}", py_repr(k), py_repr(v)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        binary = py_repr(tgr_binary().to_str().unwrap()),
+        // argv[0] is the program name; the arguments follow it.
+        argv = format!(
+            "[{}{}]",
+            py_repr(tgr_binary().to_str().unwrap()),
+            argv.iter()
+                .map(|a| format!(", {}", py_repr(a)))
+                .collect::<String>()
+        ),
+    );
+    let out = Command::new("python3")
+        .arg("-c")
+        .arg(&script)
+        .output()
+        .expect("python3 must be available for the pty tests");
+    let text = String::from_utf8_lossy(&out.stdout).into_owned();
+    (text.starts_with("STARTED"), text)
+}
+
+#[test]
+fn tgr_refuses_to_nest_inside_tgr() {
+    // `tg` warns when a guard is already active; `tgr` used to start silently,
+    // so a second guard could be running without the user knowing.
+    let (started, out) = start_with_env(&[("TGR_ACTIVE", "1")], &["--norc"]);
+    assert!(!started, "tgr started inside another tgr session:\n{out}");
+    assert!(
+        out.contains("already active") && out.contains("tgr --force"),
+        "the refusal must say why and how to override:\n{out}"
+    );
+}
+
+#[test]
+fn force_starts_inside_tgr_anyway() {
+    let (started, out) = start_with_env(&[("TGR_ACTIVE", "1")], &["--force", "--norc"]);
+    assert!(started, "tgr --force was refused:\n{out}");
+}
+
+#[test]
+fn a_tg_session_does_not_block_tgr() {
+    // The two guards use separate markers on purpose, so `tgr` inside `tg` is
+    // allowed: only `tgr`'s own marker can make `tgr` refuse.
+    let (started, out) = start_with_env(&[("TREX_GUARD_ACTIVE", "1")], &["--norc"]);
+    assert!(started, "tgr treated a tg session as its own:\n{out}");
+}

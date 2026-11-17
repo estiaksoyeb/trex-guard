@@ -769,3 +769,27 @@ died, stdout was empty, and the test reported a hang that was not there. Keys
 are now passed as a list of byte values. And the first version stopped
 pumping output at pty EOF, which happens when the *shell* leaves while the
 *guard* is still reaping it; the driver keeps waiting for the guard past EOF.
+
+### `tgr` let a user nest without saying so
+
+Reported as "tgr doesnt alert me when im runing inside tgr". `tg` prints
+`Notice: A guarded shell is already active` and points at `--force`; `tgr`
+started a second guard silently.
+
+The flag was the tell. `tgr`'s own module doc said `--force` is accepted "so
+scripts that pass it keep working" — which was honest: the guard check it
+overrides had never been ported, so `--force` did nothing and `child_argv`
+stripped it before anything could look. `tgr` exported `TGR_ACTIVE=1` to its
+child and never read it back, so the marker existed purely for other tools.
+
+Fixed by checking `TGR_ACTIVE=1` at startup and honouring `--force` anywhere
+in argv, matching `tg`'s positions and exit code. Each guard reads only its
+own marker, so `tgr` inside `tg` still starts — the separation the port was
+built around.
+
+Two test bugs of my own along the way, both worth recording because both
+produced a convincing but false failure: the pty helper built the child argv
+without `argv[0]`, so `--force` sat in the program-name slot and was never
+seen as a flag; and the "did it start?" check read `waitpid` once, catching a
+refusing guard mid-exit and calling it started. The generated script is now
+printed under `TGR_TEST_DEBUG=1` rather than reasoned about.
