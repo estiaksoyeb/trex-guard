@@ -1,9 +1,9 @@
-//! Execution and `hold_rules`, through the binary.
+//! Execution and verdict mapping, through the binary.
 //!
 //! The point of these tests is the safety property, not the feature: a gate
-//! answer must map to a run **only** when the mode allows it and no
-//! `hold_rules` name matched. Each test below is a way to try to get a run
-//! without a pass, and each must fail to.
+//! answer must map to a run **only** when it was a pass and the mode allows
+//! it. Each test below is a way to try to get a run without a pass, and each
+//! must fail to.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};

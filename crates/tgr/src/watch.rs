@@ -24,10 +24,9 @@
 //!
 //! # Naming
 //!
-//! A `hold_rules = ...` entry in `watch.ini` is matched against these names,
-//! so **the names are an interface**: renaming one silently drops whatever
-//! hold depended on it. `tgr --list-rules` prints them, and `tgw doctor`
-//! validates against that list.
+//! **The names are an interface**: renaming one changes what shows up in
+//! `rule=<name>` on stderr and in `tgw`'s explanation of a hold.
+//! `tgr --list-rules` prints them.
 //!
 //! # Configuration
 //!

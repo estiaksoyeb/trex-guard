@@ -335,10 +335,10 @@ fn run_check(arg: Result<&str, &'static str>) -> i32 {
 
 /// Runs `--list-rules`: every watch-rule name in effect, one per line.
 ///
-/// This is the source of truth `tgw` validates `hold_rules` against, so it
-/// prints names only — a caller parses lines, not prose. A rule that does not
-/// compile is marked, because it will never match and a hold that depends on
-/// it would silently never happen.
+/// This is the source of truth for rule names, so it prints names only — a
+/// caller parses lines, not prose. A rule that does not compile is marked,
+/// because it will never match and anything depending on it would silently
+/// never happen.
 fn run_list_rules() -> i32 {
     let config = tgr::config::load(None);
     let (ok, broken) = tgr::watch::compile(&config);
