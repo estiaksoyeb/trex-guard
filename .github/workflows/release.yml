@@ -72,18 +72,21 @@ jobs:
       - name: Verify static
         run: |
           set -eu
+          # The property that matters is "no dynamic loader": such a binary
+          # runs on any Linux regardless of glibc. Testing the words `file`
+          # prints has been wrong twice (musl prints "statically linked",
+          # x86_64 musl prints "static-pie linked"), so the interpreter
+          # segment is checked directly. Empty means there is nothing to load.
           for tool in tgr tgw tcx; do
             bin="target/${{ matrix.target }}/release/$tool"
-            # `file` states linkage unambiguously. Testing `ldd` output was
-            # wrong: a static musl binary makes `ldd` print "statically
-            # linked", which does not match "not a dynamic executable".
-            if ! file "$bin" | grep -q "statically linked"; then
-              echo "::error::$tool is not statically linked; it will break on an older glibc"
+            interp="$(readelf -l "$bin" | sed -n 's/.*Requesting program interpreter: \(.*\)\]/\1/p')"
+            if [ -n "$interp" ]; then
+              echo "::error::$tool needs a dynamic loader ($interp); it will break on an older glibc"
               file "$bin"
               exit 1
             fi
           done
-          echo "all three are statically linked"
+          echo "all three have no dynamic loader"
 
       - name: Smoke test
         run: |
