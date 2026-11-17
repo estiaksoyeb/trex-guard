@@ -72,13 +72,18 @@ jobs:
       - name: Verify static
         run: |
           set -eu
-          if ldd "target/${{ matrix.target }}/release/tgr" 2>&1 | grep -q "not a dynamic"; then
-            echo "tgr is static"
-          else
-            echo "::error::tgr is not statically linked; it will break on older glibc"
-            ldd "target/${{ matrix.target }}/release/tgr" || true
-            exit 1
-          fi
+          for tool in tgr tgw tcx; do
+            bin="target/${{ matrix.target }}/release/$tool"
+            # `file` states linkage unambiguously. Testing `ldd` output was
+            # wrong: a static musl binary makes `ldd` print "statically
+            # linked", which does not match "not a dynamic executable".
+            if ! file "$bin" | grep -q "statically linked"; then
+              echo "::error::$tool is not statically linked; it will break on an older glibc"
+              file "$bin"
+              exit 1
+            fi
+          done
+          echo "all three are statically linked"
 
       - name: Smoke test
         run: |
