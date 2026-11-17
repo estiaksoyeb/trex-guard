@@ -2,6 +2,11 @@
 
 ## Phase 1 — Transparent PTY
 
+> **Superseded.** The C++ guard this phase describes was removed on
+> 2026-11-17 and replaced by `tgr`. The list is kept as the record of how the
+> guard was built; it is the source of the cases now in
+> `crates/tgr/tests/cpp_suite.rs`.
+
 - [x] CMake project
 - [x] C++17 executable
 - [x] `forkpty()` shell creation

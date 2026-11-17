@@ -228,20 +228,18 @@ its fix reverted.
 
 ## What is *not* different
 
-Everything the C++ suite asserts. That suite is the only specification `tg`
-has, so it is the acceptance criteria:
+Everything the C++ suite asserted. That table is the only specification the
+guard has, so it is the acceptance criteria:
 
-- `crates/tgr/tests/cpp_suite.rs` — all 88 cases from `tests/test_rules.cpp`,
-  ported verbatim.
-- `crates/tgr/tests/parity.rs` — runs the **real** `./build/trex-guard` and
-  `tgr` on a shared corpus and requires the same verdict.
-- `crates/tgr/tests/parity_real_config.rs` — the same, under your real
-  `config.ini`, including the custom rules.
+- `crates/tgr/tests/cpp_suite.rs` — the cases from the original C++ guard's
+  `tests/test_rules.cpp`, kept verbatim. Since that source was removed on
+  2026-11-17, this table is the specification rather than a copy of one.
 
-The parity tests drive the C++ binary through a **pseudo-terminal**
-(`tests/support/drive_cpp.py`), because `tg` calls `tcgetattr` on stdin and
-refuses to run under a pipe. Testing the shipped binary as a user would run it
-is the only comparison worth making.
+The `parity` and `parity_real_config` tests drove the C++ binary through a
+pseudo-terminal and required the same verdict. They were removed with the C++
+guard, so nothing now compares `tgr` against a second implementation; the case
+table above is what remains, and it is why those cases were kept as data rather
+than folded into unit tests.
 
 `crates/tgr/tests/pty_e2e.rs` drives `tgr` the same way and checks the things a
 classifier test cannot: that a `Review` paste runs only when approved, that a
@@ -275,9 +273,9 @@ cargo build -p tgr
 cargo test -p tgr
 ```
 
-The parity tests skip loudly if `./build/trex-guard` is missing (build it with
-`cmake -B build && cmake --build build`). They are slow — each paste starts a
-real shell — around three minutes each.
+The pty tests are slow — each paste starts a real shell. The parity tests that
+drove the C++ binary are gone with it; `check_parity` (below) still drives the
+paste path.
 
 `crates/tgr/tests/check_parity.rs` is also slow (it drives the pty path over the
 corpus) but needs no C++ binary: it compares `tgr --check` against `tgr`'s own

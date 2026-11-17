@@ -1,124 +1,70 @@
-# Installation and Integration Guide
+# Installing trex-guard
 
-TREX Guard can be installed via a quick one-line script (no compiler needed) or built from source with CMake.
+There is one way to install: from a published GitHub release.
 
----
-
-## 1. Quick Install (No C/C++ Environment Required)
-
-If you don't have a C++ compiler or CMake installed, run the automated installer:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/estiaksoyeb/trex-guard/master/scripts/install.sh | bash
+```sh
+curl -fsSL https://raw.githubusercontent.com/estiaksoyeb/trex-guard/master/scripts/install.sh | sh
 ```
 
-This automatically:
-- Detects your system architecture (`x86_64`, `aarch64`, etc.).
-- Downloads the matching precompiled static release.
-- Installs `trex-guard` and the `tg` launcher into your `$PATH` (`/usr/local/bin`, `$PREFIX/bin`, or `~/.local/bin`).
-- Sets up default configuration at `~/.config/trex-guard/config.ini`.
+That installs `tgr`, `tgw`, `tcx` and the `tg` launcher, verifying a SHA-256
+checksum before anything is installed. Linux `x86_64` and `aarch64`; the
+binaries are statically linked, so no particular glibc is needed.
 
----
+## What gets installed
 
-## 2. Building and Running From Source
+| file | what it is |
+|------|------------|
+| `tgr` | the guard |
+| `tg`  | launcher: starts `tgr`, or passes `fresh`/`resume` to `tcx` |
+| `tcx` | context store |
+| `tgw` | clipboard watchdog |
 
-To build without installing system-wide:
+The install directory is chosen in this order: `--prefix`, Termux's `$PREFIX`,
+a writable `/usr/local/bin`, then `~/.local/bin`. If the directory is not on
+`PATH`, the installer says so rather than editing your shell files.
 
-```bash
-cmake -B build
-cmake --build build
+## Options
+
+```sh
+sh scripts/install.sh --version v0.2.0     # a specific release
+sh scripts/install.sh --prefix ~/.local/bin
+sh scripts/install.sh --no-verify          # skip the checksum (not recommended)
 ```
 
-Run test suite:
-```bash
-./build/test_rules
-# or
-ctest --test-dir build --output-on-failure
+## What it will not do
+
+It does not build from source. If the release is missing, or the checksum does
+not match, it stops. Nothing reaches your machine that CI did not build and
+test. That means a working release must exist — which is why CI runs before any
+tag is pushed.
+
+It does not overwrite `~/.config/trex-guard/config.ini`. An existing config is
+kept, because it is where your rules live.
+
+If an old C++ `trex-guard` binary is found in the install directory, it is
+removed. The C++ guard is no longer part of the project.
+
+## Verifying an install
+
+```sh
+tgr --check <(echo 'rm -rf /tmp/x')   # should print a danger verdict, exit 1
+tgr --check <(echo 'echo hello')      # should print nothing, exit 0
+tg                                    # a guarded shell
 ```
 
-Launch the guarded shell locally:
-```bash
-./scripts/tg
-# or
-./build/trex-guard
+## Uninstalling
+
+```sh
+rm -f /usr/local/bin/{tgr,tgw,tcx,tg}
 ```
 
----
+The guard's config is in `~/.config/trex-guard/config.ini` and is left in place.
 
-## 2. Installing
+## Building from a checkout
 
-### System-wide (Default `/usr/local`):
-```bash
-sudo cmake --install build
-```
+For development only; releases are built by CI.
 
-### User-local (`~/.local`):
-```bash
-cmake --install build --prefix ~/.local
-```
-*(Ensure `~/.local/bin` is in your `$PATH`)*
-
-This installs:
-- Binary: `trex-guard` (and `tg` launcher script) in `bin/`
-- Data / templates: `config.ini` and `shell-integration.bash` in `share/trex-guard/`
-
----
-
-## 3. Shell Integration
-
-### Optional Alias & Prompt Indicator
-To display a `[GUARD]` badge in your prompt whenever `tg` is active, add this one-liner to your `~/.bashrc`:
-
-```bash
-[ "$TREX_GUARD_ACTIVE" = "1" ] && PS1="\[\033[1;32m\][GUARD]\[\033[0m\] $PS1"
-```
-
-Alternatively, source the bundled helper script:
-```bash
-# If installed system-wide:
-source /usr/local/share/trex-guard/shell-integration.bash
-
-# Or if installed user-local:
-source ~/.local/share/trex-guard/shell-integration.bash
-```
-
-This provides:
-- The `tg` shortcut to launch the guard.
-- The `trex_guard_indicator` function to display `[GUARD]` in your custom prompt.
-- Automatically prevents nested guards.
-
-### Auto-launch on Terminal Open
-To automatically guard interactive terminal sessions, add to `~/.bashrc` or `~/.zshrc`:
-
-```bash
-[ -z "$TREX_GUARD_ACTIVE" ] && [ -t 0 ] && exec tg
-```
-
----
-
-## 4. Configuration
-
-Copy the example configuration to your user config directory:
-
-```bash
-mkdir -p ~/.config/trex-guard
-cp examples/config.ini ~/.config/trex-guard/config.ini
-```
-
-Edit `~/.config/trex-guard/config.ini` to customize:
-- `auto_approve_safe = true/false`
-- `[allowlist]`
-- `[disabled_rules]`
-- `[custom_rules]`
-
----
-
-## 5. Uninstalling
-
-From your build directory:
-
-```bash
-sudo cmake --build build --target uninstall
-# or without sudo if installed user-locally:
-cmake --build build --target uninstall
+```sh
+cargo build --release --workspace
+cargo test --workspace
 ```

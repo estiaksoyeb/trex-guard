@@ -55,10 +55,12 @@ cargo test --workspace   # includes the pty and parity suites
 ./tests/install_test.sh  # installer, against a fake release
 ```
 
-The pty and parity suites drive real guards through a terminal. They take a
-few minutes; that is the price of testing the thing that actually matters.
+The pty suites drive real guards through a terminal. They take a couple of
+minutes; that is the price of testing the thing that actually matters.
 
 Releases are built by GitHub Actions on a `v*` tag: see
-`.github/workflows/release.yml`. The C++ guard is no longer released — `tg`
-runs `tgr` — but its source stays in the tree and its rule tests still run in
-CI as the reference `tgr` is checked against.
+`.github/workflows/release.yml`. CI must be green before a tag is pushed.
+
+The original C++ guard has been removed. Its acceptance cases live on as data
+in `crates/tgr/tests/cpp_suite.rs`, which is now the guard's specification. The
+old implementation is still available in the repository history.

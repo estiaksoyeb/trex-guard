@@ -1,12 +1,13 @@
-//! The C++ guard's own acceptance cases, ported verbatim.
+//! The guard's acceptance cases: the original C++ test table, kept verbatim.
 //!
-//! These are copied from `tests/test_rules.cpp`, keeping the inputs and
-//! expectations exactly. They are the only specification `tg` has, so `tgr` is
-//! not "done" until this file passes.
+//! These were copied from `tests/test_rules.cpp` before the C++ guard was
+//! removed, keeping the inputs and expectations exactly. They are now the only
+//! specification `tgr` has, and `tgr` is not "done" until this file passes.
 //!
-//! Deliberately kept as data rather than folded into unit tests: the point is
-//! that the *same table* can be fed to the C++ binary and diffed (see
-//! `tests/parity.rs`), so a divergence names the exact input.
+//! Kept as a data table rather than folded into unit tests so a failure names
+//! the exact input. The cases were previously diffed against the C++ binary by
+//! `tests/parity.rs`; that comparison is gone with the source, so this table
+//! is the reference itself rather than a copy of one.
 
 use tgr::{classify, Risk};
 

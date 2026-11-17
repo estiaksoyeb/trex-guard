@@ -1,12 +1,11 @@
 """Drive a guard binary through a real pty.
 
-Both guards refuse to run without a terminal (`tcgetattr` on stdin), so neither
-a pipe nor `Command::output` can test them honestly. This helper forks a pty,
+The guard refuses to run without a terminal (`tcgetattr` on stdin), so neither
+a pipe nor `Command::output` can test it honestly. This helper forks a pty,
 runs the binary as a user would, and returns what the terminal showed plus the
 exit status.
 
 Usage:
-  drive_cpp.py <binary> <paste>   -> SAFE | REVIEW | DANGER
   drive_pty.py <binary> <paste>   -> repr of output + exit status
 """
 import os

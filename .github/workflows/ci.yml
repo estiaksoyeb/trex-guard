@@ -31,23 +31,6 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      # The parity suites compare `tgr` against the C++ guard. Without a
-      # `trex-guard` binary they print SKIP and pass, which is a green that
-      # proves nothing, so the reference is built here rather than in a
-      # separate job that could not share the filesystem.
-      - name: Build C++ reference guard
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake g++
-          cmake -B build -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --config Release
-
-      # The C++ guard's own acceptance table. `cpp_suite` ports these cases into
-      # Rust, but running them against the C++ binary is what keeps the port
-      # honest, and it is the only thing that proves the reference still works.
-      - name: C++ rule tests
-        run: ./build/test_rules
-
       # The pty suites drive real guards through a terminal. They are the only
       # tests that would have caught the exit and SIGTERM hangs, so they run
       # rather than being skipped for being slow.

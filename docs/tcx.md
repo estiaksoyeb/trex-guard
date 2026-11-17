@@ -27,8 +27,9 @@ It stores two fundamentally different kinds of data, and never confuses them:
 
 `tcx` is **not** part of `tg`, and `tg` is **not** part of `tcx`.
 
-- `tg` (TREX Guard) is the frozen C++17 PTY paste-safety firewall. It stays
-  exactly as it is. No behaviour change, no rewrite folded into this work.
+- `tg` is the launcher for `tgr`, the PTY paste-safety guard. (When this was
+  written it was a C++17 binary; that guard was removed on 2026-11-17 and
+  `tgr` replaced it.)
 - `tcx` is a separate Rust binary in the same repository (Cargo workspace).
 - **Dependency direction is one-way**: nothing in `tg` may ever import `tcx`.
   The guard must not grow an indexer's attack surface.
@@ -647,7 +648,8 @@ identity + 19 notes + 16 prime + 6 CLI + 12 note/prime CLI + 17 find/import +
    sets `TCX_HOME`.
 
    **Resolved.** `scripts/tcx` is the wrapper and `scripts/tcx-integration.bash`
-   sets `TCX_HOME` and defines `tcx-clip`. Both are installed by CMake.
+   sets `TCX_HOME` and defines `tcx-clip`. Releases install the `tcx` binary
+   itself; the wrapper and shell integration are for a source checkout.
 
 ## 16. Build & test
 
@@ -657,9 +659,8 @@ cargo test                  # the full tcx suite
 cargo build --release
 ```
 
-The CMake build for `tg` is untouched and independent; `Cargo.toml` at the repo
-root is a separate workspace that happens to share the directory. CMake installs
-`scripts/tcx` and `scripts/tcx-integration.bash` alongside the guard's files.
+Releases ship the compiled `tcx` binary next to `tgr` and the `tg` launcher;
+there is no CMake build any more (the C++ guard was removed).
 
 ## 17. Shell integration
 

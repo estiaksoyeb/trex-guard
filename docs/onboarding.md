@@ -18,12 +18,12 @@ Every claim below is either implemented code, a decision recorded in
 
 `trex-guard` is four binaries in one repository:
 
-- **`tg`** — TREX Guard, a frozen C++17 PTY paste-safety firewall. It
-  intercepts pasted shell text *before* it reaches the shell and halts
-  high-risk pastes for review. Sources in `src/`, built by CMake.
-- **`tgr`** — the same guard in Rust, running **beside** `tg` rather than
-  instead of it. Same rules, same config file, separate session marker. Sources
-  in `crates/tgr/`, built by Cargo. See `docs/tgr.md`.
+- **`tgr`** — the guard: a paste-safety firewall that intercepts pasted shell
+  text *before* it reaches the shell and halts high-risk pastes for review.
+  Same rules and config file as the original C++ guard, which it replaced.
+  Sources in `crates/tgr/`, built by Cargo. See `docs/tgr.md`.
+- **`tg`** — the launcher, a small shell script that starts `tgr` (and forwards
+  `fresh`/`resume` to `tcx`).
 - **`tcx`** — TREX ConteXt, a Rust binary that keeps AI-assisted context
   *outside* the repository: decisions, gotchas, open questions, and a shallow
   annotated map of the tree. Sources in `crates/tcx/`, built by Cargo.
@@ -710,58 +710,37 @@ Before proposing anything, be able to state:
 ### Building and testing
 
 ```bash
-cmake -B build && cmake --build build   # tg: build FIRST
-cargo test                              # tcx and tgr
+cargo test                              # tcx, tgr and tgw
 cargo test -p tcx                       # tcx alone (147 tests, fast)
-cargo test -p tgr --lib --test cpp_suite --test pty_e2e   # tgr, skipping parity
+cargo test -p tgr --lib --test cpp_suite --test pty_e2e   # tgr, skipping the pty corpus
 cargo build --release -p tgr            # target/release/tgr
 cargo build --release -p tgw            # target/release/tgw
+./tests/install_test.sh                 # the installer, against a fake release
 ```
 
-**The order matters.** `cargo test` runs the two `tgr` parity tests, which drive
-`./build/trex-guard`. If `tg` is not built, they skip loudly rather than fail —
-so a green `cargo test` before the cmake step proves nothing about `tgr`
-matching `tg` (§9.12). Build `tg` first, or accept that parity was skipped.
+The pty suites (`check_parity`, `watch_rules`, `pty_e2e`) drive the real guard
+through a terminal: every paste starts a shell. They are the only tests that
+would have caught the exit and SIGTERM hangs, so run the full `cargo test`
+before committing anything that touches `crates/tgr/src/rules.rs`, `shell.rs`
+or `config.rs`.
 
-The parity tests take about three minutes each: every paste starts a real
-shell. Use the `cargo test -p tgr --lib --test cpp_suite --test pty_e2e` line
-while iterating, and run the full `cargo test` before committing anything that
-touches `crates/tgr/src/rules.rs`, `shell.rs` or `config.rs`.
-
-`./build/trex-guard` is what the parity tests drive, so what matters is that it
-is built at all and is left alone. Do not rebuild it with
-`-DCMAKE_BUILD_TYPE=Release` "to help": the point of the parity test is to agree
-with the guard the human actually runs, not with whichever build is newest.
-
-One thing is known about this tree, and it was found by disbelieving the cache:
-until 2026‑11‑17 `./build/trex-guard` had been compiled with `-O3` while
-`build/CMakeCache.txt` said `Debug`. The cache was written at 00:05, the objects
-at 00:01. `cmake --build build` did not recompile them until forced; a fresh
-`cmake --build build` produced a real `-g` binary, and parity was re-run green
-against it afterwards.
-
-**So do not trust the cache for how the binary was compiled.** Check
-`build/CMakeFiles/trex-guard.dir/flags.make` and the object timestamps. If they
-disagree, rebuild and re-run parity. This is §9.8 in build clothing: the
-statement and the artifact disagreed, and only the artifact runs.
-
-The two builds are independent: CMake builds `tg`, Cargo builds `tgr` and
-`tcx`. The root `Cargo.toml` is a Cargo workspace containing `crates/tcx` and
-`crates/tgr`; it merely shares a directory with the CMake project, and neither
-build knows about the other.
+The C++ guard was removed on 2026-11-17. Its acceptance cases survive as data
+in `crates/tgr/tests/cpp_suite.rs`, which is now the specification, and the
+`parity` tests that drove the C++ binary went with it. The old implementation
+is in the repository history.
 
 ### Repository layout
 
 ```text
-src/                  tg, C++17 guard (headers sit beside their .cpp)
-tests/                guard tests (C++)
+tests/                installer test (the C++ guard's own tests were removed)
 crates/tcx/src/       tcx: id, store, notes, prime, find, import, project,
                       briefing, map, help
 crates/tcx/tests/     integration tests, including help drift detection
 crates/tgr/src/       tgr: risk, config, shell, rules, pty, main
-crates/tgr/tests/     cpp_suite (ported cases), parity (vs the real binary),
-                      parity_real_config, pty_e2e, support/*.py drivers
-scripts/tg            launcher; forwards fresh/resume to tcx
+crates/tgr/tests/     cpp_suite (the specification), check_parity, pty_e2e,
+                      watch_rules, support/*.py drivers
+scripts/tg            launcher; runs tgr, forwards fresh/resume to tcx
+scripts/install.sh    installs a GitHub release, verifies its checksum
 scripts/tcx           tcx launcher (delegates --help to the binary)
                       (there is no scripts/tgr: tgr is the binary itself)
 scripts/tcx-integration.bash   sets TCX_HOME, defines tcx-clip

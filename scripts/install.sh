@@ -150,6 +150,14 @@ for tool in tgr tgw tcx tg; do
     log_info "installed ${BIN_DIR}/${tool}"
 done
 
+# The C++ guard was removed. An old copy left on PATH would be harmless to
+# `tg` now (it looks only for `tgr`) but would still sit there confusing anyone
+# who runs it, so it is removed by name. Only the exact file is removed.
+if [ -e "${BIN_DIR}/trex-guard" ]; then
+    rm -f "${BIN_DIR}/trex-guard"
+    log_info "removed the old C++ guard at ${BIN_DIR}/trex-guard"
+fi
+
 # The guard config is a default only: never overwrite one the user has edited.
 GUARD_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/trex-guard"
 mkdir -p "$GUARD_CONFIG_DIR"

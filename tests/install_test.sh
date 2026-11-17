@@ -185,7 +185,7 @@ $(cat "$WORK/cfg.log")"
 }
 
 # `tg` must work with no C++ guard present, which is what a release installs.
-test_tg_runs_tgr_when_no_cpp() {
+test_tg_runs_tgr() {
     dir="$WORK/tg-only"
     mkdir -p "$dir"
     cp "$REPO_ROOT/scripts/tg" "$dir/tg"
@@ -200,12 +200,39 @@ STUB
     out=$(PATH="$dir:/usr/bin:/bin" TREX_GUARD_ACTIVE=0 TGR_ACTIVE=0 "$dir/tg" 2>&1)
     case "$out" in
         "TGR_CALLED"*)
-            ok "tg falls back to tgr"
+            ok "tg runs tgr"
             ;;
         *)
-            bad "tg falls back to tgr" "unexpected output: $out"
+            bad "tg runs tgr" "unexpected output: $out"
             ;;
     esac
+}
+
+# The C++ guard is gone. An old binary left behind would be confusing even
+# though `tg` no longer looks for it, so the installer removes it by name.
+test_removes_old_cpp_guard() {
+    assets="$WORK/assets-oldcpp"
+    mkdir -p "$assets"
+    make_release "$assets" "$ARCH_TAG"
+    make_shims "$WORK/shim-oldcpp" "$assets"
+
+    prefix="$WORK/prefix-oldcpp"
+    mkdir -p "$prefix"
+    printf '#!/bin/sh\necho old cpp guard\n' > "$prefix/trex-guard"
+    chmod 755 "$prefix/trex-guard"
+
+    if ! PATH="$WORK/shim-oldcpp:$PATH" HOME="$WORK/home-oldcpp" \
+        XDG_CONFIG_HOME="$WORK/home-oldcpp/.config" \
+        sh "$REPO_ROOT/scripts/install.sh" --prefix "$prefix" >"$WORK/oldcpp.log" 2>&1; then
+        bad "removes an old C++ guard" "installer failed:
+$(cat "$WORK/oldcpp.log")"
+        return
+    fi
+    if [ -e "$prefix/trex-guard" ]; then
+        bad "removes an old C++ guard" "trex-guard still present after install"
+    else
+        ok "removes an old C++ guard"
+    fi
 }
 
 test_tg_refuses_nested_session() {
@@ -234,7 +261,8 @@ test_rejects_bad_checksum
 test_missing_asset_fails
 test_rejects_unsupported_flag
 test_does_not_overwrite_config
-test_tg_runs_tgr_when_no_cpp
+test_tg_runs_tgr
+test_removes_old_cpp_guard
 test_tg_refuses_nested_session
 
 echo ""
