@@ -17,7 +17,9 @@ import signal
 import time
 
 
-def drive(binary, paste, reply=None, timeout=6.0, extra_args=(), env=None, settle=0.6):
+def drive(
+    binary, paste, reply=None, timeout=6.0, extra_args=(), env=None, settle=0.6, quiet=0.25
+):
     """Runs `binary`, sends `paste` once as a bracketed paste, then `reply`.
 
     `reply` is sent only once the review prompt appears (or, for a safe paste
@@ -45,9 +47,21 @@ def drive(binary, paste, reply=None, timeout=6.0, extra_args=(), env=None, settl
 
     out = b""
     payload = b"\x1b[200~" + paste.encode() + b"\x1b[201~"
-    deadline = time.time() + timeout
+    # The budget starts when the paste is sent, not when the process starts.
+    # Timing it from here meant that under load the shell's own startup could
+    # eat the whole `timeout`, leaving a truncated screen: a danger paste with
+    # no `HIGH RISK` line reads as "safe", which looks exactly like the two
+    # paths disagreeing when the only problem was a slow machine.
+    deadline = None
     paste_sent_at = None
     replied = False
+    # Length of the screen when the paste went out, so "the guard has said
+    # something since" can be told apart from "nothing has happened yet".
+    out_at_paste = 0
+    # When the screen last moved. Exit is decided by the screen going quiet,
+    # not by the wall clock, so the cost of a paste is how long the guard takes
+    # to say its piece rather than how long the budget allows it to.
+    last_output = time.time()
 
     def send(data):
         if isinstance(data, str):
@@ -78,7 +92,7 @@ def drive(binary, paste, reply=None, timeout=6.0, extra_args=(), env=None, settl
             if b"TGRPROMPT>" in out:
                 break
 
-    while time.time() < deadline:
+    while deadline is None or time.time() < deadline:
         r, _, _ = select.select([fd], [], [], 0.05)
         if r:
             try:
@@ -88,23 +102,44 @@ def drive(binary, paste, reply=None, timeout=6.0, extra_args=(), env=None, settl
             if not chunk:
                 break
             out += chunk
+            last_output = time.time()
 
         if paste_sent_at is None:
             if not send(payload):
                 break
             paste_sent_at = time.time()
-            continue
-
-        if replied:
+            deadline = paste_sent_at + timeout
+            out_at_paste = len(out)
             continue
 
         if b"Execute?" in out:
             if reply is None:
                 break  # leave the guard at its prompt; the caller only reads
-            send(reply)
-            replied = True
-        elif paste_sent_at is not None and time.time() - paste_sent_at > settle and reply is None:
+            if not replied:
+                send(reply)
+                replied = True
+            # Do not stop here. The review banner can share the burst with the
+            # prompt, but it can also arrive just after it, and a screen read
+            # before `HIGH RISK` lands reads as "safe". Keep reading until the
+            # screen goes quiet, which is a fact about the guard rather than a
+            # guess at how fast the machine is.
+            quiet_for = time.time() - last_output
+            if quiet_for > quiet:
+                break
+        elif reply is None and paste_sent_at is not None and time.time() - paste_sent_at > settle:
             break  # auto-approved: nothing will be asked
+        elif (
+            paste_sent_at is not None
+            and not replied
+            and len(out) > out_at_paste
+            and time.time() - last_output > settle
+        ):
+            # A safe paste is auto-approved, so `Execute?` never appears; the
+            # screen simply goes back to a prompt. Two prompts on screen and no
+            # output for `settle` means it ran and is waiting for the next
+            # paste. Without this the driver sat out the whole `timeout` on
+            # every safe paste, which was most of the suite's runtime.
+            break
 
     try:
         os.kill(pid, signal.SIGKILL)

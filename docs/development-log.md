@@ -881,3 +881,72 @@ Tests removed rather than rewritten where the behaviour is gone: three
 `doctor` tests for the deleted rule-name check, and the hold-rule escalation
 cases. Kept and re-pointed at what still holds: a pass runs in auto with no
 second list, a danger stays a block, and an old key is refused.
+
+## "It showed hold but never ran" — three bugs behind one symptom
+
+The report was that a held block announced an id and then nothing happened, and
+that after an edit even the announcement stopped appearing. That second half is
+what made it look like `tgw` had gone dead, and it was a separate bug from the
+first.
+
+What the state directory showed: `.seen` markers for both ids still on disk,
+`holds/` empty. So the block *had* been seen and held both times. The log did
+contain both hold lines; `tgw log` filters and limits, and grepping
+`events.log` directly is what showed them. Do not trust `tgw log` alone.
+
+Three faults, in the order they bit:
+
+1. **The hold expired and was deleted in silence.** `sweep_expired` removed it
+   and printed nothing. A hold that was announced and then vanished is
+   indistinguishable from a block that was never seen. It now returns the ids
+   it dropped and the caller says so, with what to do about it.
+2. **The seen marker was permanent.** Dedupe existed to cover the clipboard
+   still holding the block and the block's output replacing it — a window of
+   seconds. It was implemented as a file that never expired, so a block that
+   was held and never approved could never be offered again. Copying it a
+   second time was silently ignored as a duplicate. The marker now records when
+   it was written and expires after 300 s; an unreadable marker counts as not
+   seen, because offering a block twice is recoverable and ignoring it forever
+   is not.
+3. **A failed `holds::save` was discarded** with `let _ =`. The id was announced
+   anyway, so `approve` could not find it. It is now an error that logs
+   `cannot save hold: …` and blocks, rather than printing a lead that goes
+   nowhere.
+
+Fixing (2) exposed a fourth: `stage()` used `create_new`, so re-offering
+identical content failed with `File exists`. The id is derived from the content
+hash, so a block whose earlier file is still there could never be re-staged.
+`AlreadyExists` is now accepted only when the bytes are identical; different
+content under the same id is still refused, so a colliding or forged id cannot
+make the gate read one block while the shell runs another.
+
+`announce()` also now says, after a hold, that nothing has run and which
+command runs it. A hold is not a run, and saying only "hold" reads as "done".
+
+The user was right three times and I was wrong three times. I blamed the
+clipboard bridge; it works. I blamed the trigger line; it was fine. Then I
+explained "a hold is not a run" as though that were the whole answer, when the
+real faults were silent expiry and permanent dedupe. "Look at the code enough"
+was the correct instruction.
+
+## Test suite time was mostly a fixed wait, not work
+
+`check_parity` took 264 s and failed intermittently in the full suite while
+passing alone. Both facts had one cause: `drive_pty.py` read to its deadline on
+every paste instead of stopping when the guard had answered, and the early-exit
+branch was gated on `reply is None`, so it never fired for the parity tests.
+Under load the screen could still be truncated when the deadline passed, and a
+truncated screen has no `HIGH RISK` in it — which reads as "safe", which looks
+exactly like the two paths disagreeing. The flake was never in `tgr`.
+
+The driver now stops when the screen has gone quiet *and* a verdict or reply is
+present. `check_parity` 264 s → 40 s, `watch_rules` 134 s → 14 s, same answers,
+flake gone.
+
+The C++ parity suites (`parity`, `parity_real_config`) still take ~250 s each
+and were left alone. They are slower for a different reason, and investigating
+it turned up something worth recording rather than fixing: the C++ guard does
+not answer ble.sh's cursor-position query, so with the real `.bashrc` the shell
+sits at `[ble: press RET to continue]` and never runs the pasted block. Those
+suites are therefore comparing text that is not a verdict from a shell that
+actually ran the block. `tg` is frozen, so this is written down, not changed.
