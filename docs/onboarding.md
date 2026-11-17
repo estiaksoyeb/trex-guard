@@ -20,8 +20,8 @@ Every claim below is either implemented code, a decision recorded in
 
 - **`tgr`** — the guard: a paste-safety firewall that intercepts pasted shell
   text *before* it reaches the shell and halts high-risk pastes for review.
-  Same rules and config file as the original C++ guard, which it replaced.
-  Sources in `crates/tgr/`, built by Cargo. See `docs/tgr.md`.
+  It replaced a C++ guard, keeping that guard's rules and config file. Sources
+  in `crates/tgr/`, built by Cargo. See `docs/tgr.md`.
 - **`tg`** — the launcher, a small shell script that starts `tgr` (and forwards
   `fresh`/`resume` to `tcx`).
 - **`tcx`** — TREX ConteXt, a Rust binary that keeps AI-assisted context
@@ -44,35 +44,30 @@ guard binary with no launcher and no forwarding.
 
 ### Which guard to use
 
-Either. `tg` is the one that has been used longest; `tgr` is the port, on trial
-for daily use. The human's choice, not yours — and never assume the other is
-absent, because **both can be installed and running**.
+There is one guard, and `tg` runs it. `tg` is a shell script that execs `tgr`,
+found beside the launcher first and then on `PATH`; it is not a second guard and
+there is no C++ binary to fall back to (it was removed on 2026-11-17).
 
 ```bash
-tg              # or tgr: both start a guarded shell
-tg fresh | clip # per-chat commands: tg only (see below)
+tg              # a guarded shell
+tg fresh | clip # per-chat commands, forwarded to tcx
+tgr             # the same guard, without the tcx forwarding
 ```
 
-The division is exact and worth stating plainly:
+The division is exact:
 
-- **Starting a shell**: `tg` or `tgr`. Interchangeable.
+- **Starting a shell**: `tg` or `tgr`. Both are the same guard.
 - **`fresh` / `resume`**: `tg` only. `tgr` is a guard and nothing else, so
   `tgr fresh` starts a guarded shell and tries to run a command called `fresh`.
-  It does not forward to `tcx`. Use `tg fresh` and `tg resume` whichever guard
-  you started.
+  It does not forward to `tcx`.
 
-So "use tgr" means exactly one thing: type `tgr` instead of `tg` on the line
-that starts a shell. Nothing else in the loop changes.
+`tgr` shows a Review prompt where a user rule in `config.ini` cannot be used —
+a rule that does not compile, or one that exceeds the backtrack limit. The
+paste is held at `Review` rather than the rule being silently dropped. This is
+deliberate and is one of the recorded differences; if the human sees a Review
+prompt, that is a rule that could not be applied, not a new risk in the paste.
 
-`tgr` also shows **more** review prompts than `tg` in two cases, by design
-(`docs/tgr.md`): a user rule in `config.ini` that does not compile, and a user
-rule that exceeds the backtrack limit. Both hold the paste at `Review` where
-`tg` would have silently dropped the rule. If the human sees a Review prompt
-under `tgr` that `tg` never gave, that is the port working as intended, not a
-new risk in the paste.
-
-Both read the **same** `~/.config/trex-guard/config.ini` (read-only), so a
-custom rule added for one applies to both. Neither writes it.
+The guard reads `~/.config/trex-guard/config.ini` and never writes it.
 
 ---
 
@@ -449,25 +444,24 @@ Spell them long (`--kind`, `--dir`, `--depth`) and the ambiguity disappears.
 
 ## 8. Why the pieces are separate
 
-### 8.1 Why `tg` stays frozen, and why `tgr` is separate
+### 8.1 Why the guard is separate from `tcx`
 
-`tg` is a security tool. A security tool that also indexes files has a larger
-attack surface and a weaker story. Splitting keeps it auditable, keeps "`tg` is
-tested and unchanged" a true statement, and means a regression has one possible
-cause, not two. The dependency is one-way: `tg` may call `tcx`; `tcx` never
-imports a guard.
+`tgr` is a security tool. A security tool that also indexes files has a larger
+attack surface and a weaker story. Splitting keeps it auditable, keeps "the
+guard is tested and unchanged" a true statement, and means a regression has one
+possible cause, not two. The dependency is one-way: `tg` may call `tcx`; `tcx`
+never imports a guard.
 
-`tgr` is a separate binary for the same reason plus one more: a rewrite of a
-security tool is the riskiest change you can make to one, because the only
-specification it has is its own behaviour. Shipping it *beside* the original
-means the original can still protect the terminal while the port is compared
-against it. The rule throughout the port was "match `tg` exactly, including its
-quirks; change only what is provably wrong, and write down every difference."
-Those five differences are in `docs/tgr.md`, and they are not all the same
-kind of thing:
+**History, because it explains the layout.** `tgr` was written as a Rust port
+of a C++ guard while that guard sat beside it, so the original could keep
+protecting the terminal while every paste was compared against both. The rule
+throughout the port was "match the C++ guard exactly, including its quirks;
+change only what is provably wrong, and write down every difference." Those
+five differences are in `docs/tgr.md`, and they are not all the same kind of
+thing:
 
-- **stricter about pastes** — 2 and 3 hold pastes at `Review` that `tg` would
-  have let through, because a rule could not run;
+- **stricter about pastes** — 2 and 3 hold pastes at `Review` that the C++ guard
+  would have let through, because a rule could not run;
 - **an isolation choice** — 1 keeps the two guards' sessions separate;
 - **no behaviour change** — 4 and 5 trade a fatal error and a signal-handler
   re-raise for a default and a normal unwind.
@@ -475,25 +469,24 @@ kind of thing:
 Do not read "deliberate difference" as "more cautious". Differences 2 and 3 are
 the only ones that change what the human sees.
 
-**They cannot be confused for each other.** The guarded child gets
-`TGR_ACTIVE=1` from `tgr` and `TREX_GUARD_ACTIVE=1` from `tg`, and each guard
-checks only its own. `scripts/tg` refuses to start when `TREX_GUARD_ACTIVE=1`,
-so if `tgr` set that variable you could never run `tg` inside a `tgr` session.
-A test runs the installed `tg` inside a real `tgr` and requires it to answer —
-if that ever breaks, the marker was changed, not the shell.
+**The C++ guard was removed on 2026-11-17**, and `tgr` is now the only guard;
+`tg` is a launcher that runs it. So there is no second implementation to compare
+against, and the parity tests that did so are gone. What survives is the case
+table those comparisons were built on: `crates/tgr/tests/cpp_suite.rs`, kept as
+data. **It is now the specification rather than a copy of one** — which is
+exactly why it was kept as data when the source was deleted. Do not "fix" a
+failure there by changing the expectation.
 
-**They share the config file on purpose.** The human's custom rules must apply
-identically to both, or `tgr` is guarding a different system than the one that
-was configured. Sharing is safe because both only read it. The §4 rule that
-`tcx` must never touch `~/.config/trex-guard` still stands and is about
-*writing*.
+**The marker is still `TGR_ACTIVE`, and `TREX_GUARD_ACTIVE` is still checked.**
+The guarded child gets `TGR_ACTIVE=1` from `tgr`; `scripts/tg` refuses to start
+when `TREX_GUARD_ACTIVE=1`, and `tgr` never sets that variable. That separation
+was what let `tg` run inside a `tgr` session while both existed, and it is
+still tested, because a launcher that thinks it is nested will refuse to start.
 
-**The port is verified against the shipped binary, not against a test table.**
-`crates/tgr/tests/` runs the real `./build/trex-guard` and `tgr` on the same
-pastes through a pseudo-terminal and requires the same verdict — once with the
-built-in rules, once with the live `config.ini`. That is the property to
-preserve: **if `tgr` diverges from `tg`, the parity tests are what notice.** Do
-not "fix" a parity failure by changing the expectation.
+**Config is read, never written, and by one program now.** The human's custom
+rules apply to the running guard, so `tgr` must read `config.ini`. It only ever
+reads it. The §4 rule that `tcx` must never touch `~/.config/trex-guard` still
+stands and is about *writing*.
 
 ### 8.2 Why config is never read from the repository
 
@@ -631,7 +624,9 @@ wording in the same session.**
 
 ### 9.11 Ported from memory instead of from the source
 
-The guard is 1858 lines of C++ and every branch of it decides whether a command
+*From when the C++ guard existed; the source is now in the repository history.*
+
+The C++ guard was 1858 lines and every branch of it decided whether a command
 is *seen*. A "cleaner" Rust rewrite might handle one more quoting case and stop
 catching a paste the original caught. The port was therefore made by reading
 all of `src/` first, branch by branch, including the quirks — `||` ends a
@@ -644,16 +639,23 @@ are behaviour.** It is not the spec for *whether you succeeded* — see §9.12.
 
 ### 9.12 A passing test proved only that it matched my reading
 
-`cpp_suite.rs` ports all 88 cases from `tests/test_rules.cpp` verbatim. It
-passed, and that proved nothing about whether the port matched the *binary* — it
-proved the port matched my transcription of the test file. The real check was
-running the shipped `trex-guard` and `tgr` on the same pastes through a pty and
-diffing verdicts (`parity.rs`, `parity_real_config.rs`).
+`cpp_suite.rs` holds the cases from the C++ guard's `tests/test_rules.cpp`
+verbatim. They passed, and that proved nothing about whether the port matched
+the *binary* — it proved the port matched my transcription of the test file. The
+real check was running the shipped `trex-guard` and `tgr` on the same pastes
+through a pty and diffing verdicts (`parity.rs`, `parity_real_config.rs`, both
+since removed with the C++ guard).
 
-So the two rules stack, they do not compete: **read the source to write it
+So the two rules stacked, they did not compete: **read the source to write it
 (§9.11), then compare against the running binary to believe it (§9.12).** Source
 reading says what to build; only the binary can say whether you built it. Same
 failure as §9.7, from another direction.
+
+With the second implementation gone, this comparison can no longer be made, and
+that is the cost of deleting it. What remains is the case table — which is why
+it was kept as data. Any future claim that "the guard still behaves the same"
+rests on that table and on `check_parity` (that `--check` agrees with the paste
+path), not on a second opinion.
 
 ### 9.13 Four times the harness lied, not the product
 
@@ -704,7 +706,7 @@ Before proposing anything, be able to state:
 | dated history of each slice and what it fixed | `docs/development-log.md` |
 | the guard's PTY model and security boundary | `docs/architecture.md` |
 | guard config syntax | `docs/configuration.md` |
-| install, shell integration | `docs/install.md` |
+| install, shell integration | `docs/install.md` (§11, "Releasing") |
 | the live rules an AI follows | your prompt template (§3) |
 
 ### Building and testing
@@ -712,7 +714,7 @@ Before proposing anything, be able to state:
 ```bash
 cargo test                              # tcx, tgr and tgw
 cargo test -p tcx                       # tcx alone (147 tests, fast)
-cargo test -p tgr --lib --test cpp_suite --test pty_e2e   # tgr, skipping the pty corpus
+cargo test -p tgr --lib --test cpp_suite --test pty_e2e   # tgr, skipping the slow corpus tests
 cargo build --release -p tgr            # target/release/tgr
 cargo build --release -p tgw            # target/release/tgw
 ./tests/install_test.sh                 # the installer, against a fake release
@@ -728,6 +730,35 @@ The C++ guard was removed on 2026-11-17. Its acceptance cases survive as data
 in `crates/tgr/tests/cpp_suite.rs`, which is now the specification, and the
 `parity` tests that drove the C++ binary went with it. The old implementation
 is in the repository history.
+
+### Releasing
+
+Releases ship **only** the Rust tools, as `musl` static binaries for
+`aarch64` and `x86_64`. There is no source build and no C++ any more.
+
+1. Bump `version` in the root `Cargo.toml`. All three crates inherit it via
+   `version.workspace = true`, so this one line is the whole version. A release
+   whose binaries report the wrong number cannot be debugged from a bug report;
+   this was wrong once (binaries said 0.1.0 while the tag said 0.2.1).
+2. Push to `master` and let `.github/workflows/ci.yml` go green on **both**
+   architectures. Do not tag a red commit.
+3. Push a `v*` tag on that green commit. `.github/workflows/release.yml` builds
+   both musl binaries, checks they are genuinely static with `readelf` (a
+   `INTERP` segment means dynamic), and publishes with a `SHA256SUMS` asset.
+4. Install it the way a user does, from GitHub, and check the versions:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/estiaksoyeb/trex-guard/master/scripts/install.sh | sh
+tg --version && tgr --version && tgw --version && tcx --version
+```
+
+`scripts/install.sh` downloads only from GitHub Releases, verifies the checksum
+before installing anything, never builds from source, and never overwrites an
+existing `~/.config/trex-guard/config.ini`. `tests/install_test.sh` checks all of
+that against a fake release and needs no network.
+
+`tg --version` and `scripts/tcx --version` exec the binary rather than printing
+a literal. Both printed a hardcoded `0.1.0` once; do not reintroduce that.
 
 ### Repository layout
 
