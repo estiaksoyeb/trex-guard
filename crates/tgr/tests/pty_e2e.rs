@@ -134,6 +134,18 @@ fn a_dangerous_paste_runs_only_when_approved() {
         screen.contains("[approved]"),
         "approving did not report itself:\n{screen}"
     );
+    // The guard hands the payload to a shell; approving makes it run, but not
+    // necessarily before the driver stops reading. Reading the filesystem
+    // straight away raced a child that had been started and not finished,
+    // which failed on a loaded CI runner while passing here.
+    //
+    // So this waits for the effect rather than assuming it. The deadline is
+    // generous because it is only reached when the guard really did swallow
+    // the payload, and failing late is far better than failing wrongly.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    while marker.exists() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
     assert!(
         !marker.exists(),
         "approved command did not run; the guard swallowed the payload:\n{screen}"
