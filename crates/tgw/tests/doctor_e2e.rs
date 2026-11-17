@@ -85,13 +85,12 @@ fn text(out: &Output) -> String {
 fn an_honest_setup_passes_every_check() {
     let sb = Sandbox::new("good");
     let gate = sb.honest_gate();
-    sb.config(&gate, "notify_cmd = true\nhold_rules = rm, mv\nmode = confirm");
+    sb.config(&gate, "notify_cmd = true\nmode = confirm");
     let out = sb.doctor();
     let t = text(&out);
     assert_eq!(out.status.code(), Some(0), "{t}");
     assert!(t.contains("all checks passed"), "{t}");
     assert!(t.contains("gate blocks a known-bad sample"), "{t}");
-    assert!(t.contains("hold_rules"), "{t}");
 }
 
 #[test]
@@ -122,50 +121,6 @@ fn a_gate_that_blocks_clean_code_is_caught() {
     let t = text(&out);
     assert_eq!(out.status.code(), Some(1), "{t}");
     assert!(t.contains("did not pass a clean sample"), "{t}");
-}
-
-#[test]
-fn a_hold_rule_that_does_not_exist_is_caught() {
-    // A typo means a hold that silently never happens: the block runs in auto.
-    let sb = Sandbox::new("holdtypo");
-    let gate = sb.honest_gate();
-    sb.config(&gate, "hold_rules = rm, rmm");
-    let out = sb.doctor();
-    let t = text(&out);
-    assert_eq!(out.status.code(), Some(1), "{t}");
-    assert!(t.contains("rmm"), "{t}");
-}
-
-#[test]
-fn a_gate_that_cannot_list_rules_cannot_pass_the_hold_check() {
-    // A gate without `--list-rules` cannot say whether `hold_rules` names
-    // anything real, so doctor must not report the names as verified.
-    let sb = Sandbox::new("nolist");
-    let gate = sb.script(
-        "gate",
-        "#!/bin/sh\nif [ \"$1\" = \"--list-rules\" ]; then exit 2; fi\n\
-         if grep -q 'rm -rf' \"$2\"; then echo 'rule=rm risk=danger' >&2; exit 1; fi\nexit 0\n",
-    );
-    sb.config(&gate, "hold_rules = rm");
-    let out = sb.doctor();
-    let t = text(&out);
-    assert_eq!(out.status.code(), Some(1), "{t}");
-    assert!(t.contains("cannot be asked for its rules"), "{t}");
-}
-
-#[test]
-fn a_gate_that_lists_no_rules_is_caught() {
-    let sb = Sandbox::new("emptylist");
-    let gate = sb.script(
-        "gate",
-        "#!/bin/sh\nif [ \"$1\" = \"--list-rules\" ]; then exit 0; fi\n\
-         if grep -q 'rm -rf' \"$2\"; then echo 'rule=rm risk=danger' >&2; exit 1; fi\nexit 0\n",
-    );
-    sb.config(&gate, "hold_rules = rm");
-    let out = sb.doctor();
-    let t = text(&out);
-    assert_eq!(out.status.code(), Some(1), "{t}");
-    assert!(t.contains("with no rules"), "{t}");
 }
 
 #[test]

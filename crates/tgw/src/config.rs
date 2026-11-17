@@ -144,9 +144,6 @@ pub struct Config {
     pub auto_unlock_approvals: u64,
     pub state_dir: String,
     pub log_dir: String,
-    /// Rule names that `tgw` holds instead of running. Names only: the
-    /// patterns live in `tgr` (see `[watch-rules]` in its config).
-    pub hold_rules: Vec<String>,
 }
 
 impl Default for Config {
@@ -176,7 +173,6 @@ impl Default for Config {
             auto_unlock_approvals: 20,
             state_dir: String::new(),
             log_dir: String::new(),
-            hold_rules: Vec::new(),
         }
     }
 }
@@ -290,10 +286,6 @@ pub const DEFAULT_WATCH_INI: &str = "\
 clip_get_cmd = clipg
 gate_cmd = tgr --check {file}
 
-# Rule names from `tgr --list-rules`. A pass that mentions one of these
-# waits for a tap instead of running in auto.
-hold_rules = rm, mv, git-clean, git-reset, git-checkout, sed-i
-
 mode = confirm
 poll_ms = 500
 timeout_s = 120
@@ -306,15 +298,17 @@ hold_ttl_s = 300
 /// fail [`Config::validate`] because `clip_get_cmd` and `gate_cmd` are
 /// required. That way "no config" and "empty config" report the same problem
 /// instead of the former looking like a successful start.
-pub fn load() -> (Config, Option<PathBuf>) {
+pub fn load() -> (Config, Option<PathBuf>, Vec<String>) {
     let path = config_path();
     let mut cfg = Config::default();
+    let mut problems = Vec::new();
     if let Some(p) = &path {
-        if let Ok(text) = std::fs::read_to_string(p) {
-            parse_into(&mut cfg, &text);
+        match std::fs::read_to_string(p) {
+            Ok(text) => problems = parse_into(&mut cfg, &text),
+            Err(e) => problems.push(format!("{}: cannot read: {e}", p.display())),
         }
     }
-    (cfg, path)
+    (cfg, path, problems)
 }
 
 /// Parses `watch.ini` text over the defaults.
@@ -369,9 +363,6 @@ pub fn parse_into(cfg: &mut Config, text: &str) -> Vec<String> {
             "env_allow" => {
                 cfg.env_allow = split_list(value);
             }
-            "hold_rules" => {
-                cfg.hold_rules = split_list(value);
-            }
             "cwd_mode" => match CwdMode::parse(value) {
                 Ok(m) => cfg.cwd_mode = m,
                 Err(e) => problems.push(format!("line {n}: {e}")),
@@ -403,6 +394,13 @@ pub fn parse_into(cfg: &mut Config, text: &str) -> Vec<String> {
                 "auto_unlock_approvals",
                 &mut problems,
             ),
+            // Removed key, kept as a named error so an old file says what to
+            // do instead of reporting a bare "unknown key".
+            "hold_rules" => problems.push(format!(
+                "line {n}: `hold_rules` was removed: rules, including which ones \
+                 hold a block, are defined in trex-guard's config.ini as `review` \
+                 rules. Delete this line."
+            )),
             other => problems.push(format!("line {n}: unknown key `{other}`")),
         }
         if let Some(k) = known_key(&key) {
@@ -439,7 +437,6 @@ fn known_key(key: &str) -> Option<&'static str> {
         "auto_unlock_approvals",
         "state_dir",
         "log_dir",
-        "hold_rules",
     ];
     KEYS.iter().find(|k| **k == key).copied()
 }
@@ -640,9 +637,6 @@ impl Config {
                 ));
             }
         }
-        if self.hold_rules.iter().any(|r| r.trim().is_empty()) {
-            problems.push("hold_rules contains an empty name".into());
-        }
         if self.env_allow.iter().any(|v| v.trim().is_empty()) {
             problems.push("env_allow contains an empty name".into());
         }
@@ -678,7 +672,6 @@ mod tests {
         assert_eq!(c.mode, Mode::Dry);
         assert_eq!(c.cwd_mode, CwdMode::Inherit);
         assert_eq!(c.trigger_first_line, "set +H");
-        assert!(c.hold_rules.is_empty());
         assert!(c.clip_get_cmd.is_empty());
         assert!(c.gate_cmd.is_empty());
     }
@@ -726,10 +719,24 @@ mod tests {
 
     #[test]
     fn lists_split_on_commas_and_trim() {
-        let (c, problems) = parse("hold_rules = rm, mv ,  chmod\nenv_allow = PATH, HOME\n");
+        let (c, problems) = parse("env_allow = PATH, HOME\n");
         assert!(problems.is_empty(), "{problems:?}");
-        assert_eq!(c.hold_rules, vec!["rm", "mv", "chmod"]);
         assert_eq!(c.env_allow, vec!["PATH", "HOME"]);
+    }
+
+    #[test]
+    fn hold_rules_is_no_longer_a_key() {
+        // It was removed: it could only turn a *safe* pass into a hold, i.e.
+        // it was a second place to express "review this", competing with the
+        // rules in `config.ini`. Naming it now is an error rather than being
+        // ignored, so an old file does not look configured when it is not.
+        let (_, problems) = parse("hold_rules = rm, mv\n");
+        let msg = problems.join("\n");
+        assert!(msg.contains("`hold_rules` was removed"), "{msg}");
+        // The message has to say where the rules live now, or the user is
+        // left to guess.
+        assert!(msg.contains("config.ini"), "{msg}");
+        assert!(msg.contains("review"), "{msg}");
     }
 
     #[test]

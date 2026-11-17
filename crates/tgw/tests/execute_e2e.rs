@@ -148,44 +148,37 @@ fn a_gate_error_never_runs_in_auto_mode() {
 }
 
 #[test]
-fn hold_rules_turns_a_pass_into_a_hold_in_auto_mode() {
-    // The gate says safe. The human said "rm always needs a tap." The human
-    // wins, and the block does not run.
+fn a_pass_runs_in_auto_with_no_second_list() {
+    // `hold_rules` is gone: the gate's exit code is the whole verdict. A pass
+    // runs in auto, and there is no second list that can hold it.
     let sb = Sandbox::new("holdrule");
+    sb.config("mode = auto\nauto_unlock_approvals = 0");
+    let w = sb.witness();
+    let out = sb.run(&["once"], &touch(&w), "0", "watch=rm");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(w.exists(), "a plain pass did not run in auto:\n{stdout}");
+}
+
+#[test]
+fn an_old_hold_rules_key_is_refused() {
+    // An existing watch.ini may still carry the removed key. tgw must refuse
+    // to start rather than ignore it, and the block must not run.
+    let sb = Sandbox::new("oldkey");
     sb.config("mode = auto\nauto_unlock_approvals = 0\nhold_rules = rm");
     let w = sb.witness();
     let out = sb.run(&["once"], &touch(&w), "0", "watch=rm");
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(!w.exists(), "a hold_rule was ignored:\n{stdout}");
-    assert!(stdout.contains("hold"), "{stdout}");
-    assert!(stdout.contains("hold_rules matched: rm"), "{stdout}");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!w.exists(), "a block ran with an unusable config:\n{stdout}{stderr}");
+    assert!(stderr.contains("hold_rules"), "{stderr}");
 }
 
 #[test]
-fn a_rule_name_also_matches_hold_rules() {
-    // Names come from both `rule=` and `watch=`; the human should not have to
-    // know which table the gate took the name from.
-    let sb = Sandbox::new("holdrule2");
-    sb.config("mode = auto\nauto_unlock_approvals = 0\nhold_rules = git-clean");
-    let w = sb.witness();
-    let out = sb.run(&["once"], &touch(&w), "0", "watch=git-clean");
-    assert!(!w.exists(), "{}", String::from_utf8_lossy(&out.stdout));
-}
-
-#[test]
-fn an_unrelated_name_does_not_hold() {
-    let sb = Sandbox::new("nohold");
-    sb.config("mode = auto\nauto_unlock_approvals = 0\nhold_rules = rm, mv");
-    let w = sb.witness();
-    let out = sb.run(&["once"], &touch(&w), "0", "watch=sed-i");
-    assert!(w.exists(), "an unrelated watch name held the block:\n{}", String::from_utf8_lossy(&out.stdout));
-}
-
-#[test]
-fn hold_rules_cannot_escalate_or_de_escalate_a_block() {
-    // Naming a rule in hold_rules must not turn a danger into a hold.
+fn a_danger_is_still_a_block() {
+    // The one invariant worth re-asserting now that `hold_rules` is gone:
+    // nothing in watch.ini can turn a block into a hold.
     let sb = Sandbox::new("nodescalate");
-    sb.config("mode = auto\nauto_unlock_approvals = 0\nhold_rules = rm");
+    sb.config("mode = auto\nauto_unlock_approvals = 0");
     let w = sb.witness();
     let out = sb.run(&["once"], &touch(&w), "1", "rule=rm risk=danger\nwatch=rm");
     assert!(!w.exists(), "{}", String::from_utf8_lossy(&out.stdout));
@@ -343,5 +336,28 @@ fn tgw_cd_refuses_relative_and_missing_paths() {
             .unwrap();
         assert_eq!(out.status.code(), Some(2), "{bad} was accepted");
         assert_eq!(std::fs::read_to_string(&cwdfile).unwrap().trim(), "/tmp");
+    }
+}
+
+#[test]
+fn a_config_that_fails_to_parse_never_runs_a_block() {
+    // Found while removing `hold_rules`: `config::load` discarded every parse
+    // problem, so a typo'd key or a bad `mode` value left the block running on
+    // a config that had not been understood. The gate is only as trustworthy
+    // as the config describing it.
+    for broken in ["bogus_key = 1", "mode = yolo"] {
+        let sb = Sandbox::new("parsefail");
+        sb.config(&format!("mode = auto\nauto_unlock_approvals = 0\n{broken}"));
+        let w = sb.witness();
+        let out = sb.run(&["once"], &touch(&w), "0", "");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            !w.exists(),
+            "a block ran with an unusable config ({broken}):\n{stderr}"
+        );
+        assert!(
+            stderr.contains("not usable"),
+            "{broken} was not reported as a problem:\n{stderr}"
+        );
     }
 }

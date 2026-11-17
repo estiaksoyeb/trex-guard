@@ -181,13 +181,18 @@ fn the_config_is_never_read_from_the_current_directory() {
 }
 
 #[test]
-fn hold_rules_parse_as_a_name_list_only() {
-    // tgw never sees a pattern, so anything here is a name. A name that does
-    // not exist in `tgr --list-rules` is a `doctor` problem, not a parse
-    // problem, because validation needs the gate binary.
+fn hold_rules_is_refused_with_an_explanation() {
+    // The key was removed. An old watch.ini still carrying it must fail
+    // loudly rather than appear configured while doing nothing.
     let home = Home::new("holdrules", &format!("{GOOD}hold_rules = rm, mv\n"));
     let out = home.run(&["check-config"]);
-    assert_eq!(out.status.code(), Some(0), "{}", String::from_utf8_lossy(&out.stdout));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(out.status.code(), Some(1), "{stdout}");
+    assert!(stdout.contains("hold_rules"), "{stdout}");
+    assert!(
+        stdout.contains("config.ini"),
+        "the error must say where the rules now belong:\n{stdout}"
+    );
 }
 
 #[test]

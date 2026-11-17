@@ -23,9 +23,9 @@
 //! # Why stderr is parsed for names
 //!
 //! `tgr --check` prints `rule=<name> risk=<...>` and `watch=<name>`. The names
-//! are used for two things: telling the human *why* a block was held, and the
-//! `hold_rules` mapping. Nothing in this module interprets a rule name as a
-//! risk; that is the gate's answer, in the exit code.
+//! are used to tell the human *why* a block was held. Nothing in this module
+//! interprets a rule name as a risk; that is the gate's answer, in the exit
+//! code.
 
 use std::io::Read;
 use std::path::Path;
@@ -78,13 +78,6 @@ impl Report {
         parts.extend(self.watch.iter().map(|w| format!("watch:{w}")));
         parts.join(", ")
     }
-
-    /// Every name, rule and watch, for `hold_rules` matching.
-    pub fn all_names(&self) -> Vec<String> {
-        let mut v: Vec<String> = self.rules.iter().map(|(n, _)| n.clone()).collect();
-        v.extend(self.watch.iter().cloned());
-        v
-    }
 }
 
 /// Maps a gate exit code to a verdict. The single place that decides.
@@ -93,7 +86,6 @@ pub fn verdict_for(code: Option<i32>, stderr: &str) -> GateResult {
     match code {
         Some(0) => GateResult::Pass {
             reason: report.reason(),
-            names: report.all_names(),
         },
         Some(1) => GateResult::Block {
             reason: non_empty(report.reason(), "gate reported danger"),
@@ -291,7 +283,7 @@ mod tests {
         assert_eq!(r.watch, vec!["sed-i"]);
         assert!(r.reason().contains("rm -rf"));
         assert!(r.reason().contains("watch:sed-i"));
-        assert_eq!(r.all_names(), vec!["rm -rf", "git clean", "sed-i"]);
+        assert!(r.reason().contains("git clean (review)"));
     }
 
     #[test]

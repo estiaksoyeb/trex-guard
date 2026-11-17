@@ -95,12 +95,12 @@ byte-identical with the rules present and with every one of them disabled.
 
 ### Names are an interface
 
-`hold_rules` in `tgw`'s `watch.ini` matches these names, so renaming one
-silently drops whatever hold depended on it. `tgr --list-rules` prints them and
-is the source of truth; `tgw doctor` validates against it.
+`tgr --list-rules` prints every rule name, and it is the source of truth for
+them. Renaming a rule is a visible change: the name is what appears in
+`rule=<name>` on stderr and what `tgw` shows when it explains a hold.
 
 A rule whose pattern does not compile is printed as `name<TAB>BROKEN` and
-reported on stderr. It is never silently dropped: a hold that cannot match is
+reported on stderr. It is never silently dropped: a rule that cannot match is
 exactly the failure this is meant to make visible.
 
 ### Defaults and how to change them

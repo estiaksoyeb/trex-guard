@@ -43,7 +43,7 @@ use crate::log::now_unix;
 pub struct Hold {
     pub id: String,
     pub hash: u64,
-    /// Why it was held: the gate's rule names, or `hold_rules matched: ...`.
+    /// Why it was held: the gate's rule names.
     pub reason: String,
     /// Unix time after which the hold is dead.
     pub expires: u64,
@@ -258,9 +258,9 @@ pub fn verify(
         });
     }
     match gate(&path) {
-        crate::pipeline::GateResult::Pass { reason, .. } => {
-            // A `hold_rules` match at approval time is still a pass: the human
-            // is the approval. But a rule that now blocks must refuse.
+        crate::pipeline::GateResult::Pass { reason } => {
+            // Still a pass at approval time: the human is the approval. But a
+            // rule that now blocks must refuse.
             let _ = reason;
             Ok(path)
         }
@@ -435,7 +435,6 @@ mod tests {
         let h = load(&d, "exp").unwrap();
         let r = verify(&clean_cfg(), &d, &h, |_| crate::pipeline::GateResult::Pass {
             reason: String::new(),
-            names: vec![],
         });
         assert!(matches!(r, Err(Refusal::Expired { .. })), "{r:?}");
         let _ = std::fs::remove_dir_all(&d);
@@ -450,7 +449,6 @@ mod tests {
         std::fs::write(&path, "set +H\nrm -rf /\n").unwrap();
         let r = verify(&clean_cfg(), &d, &h, |_| crate::pipeline::GateResult::Pass {
             reason: String::new(),
-            names: vec![],
         });
         assert!(matches!(r, Err(Refusal::HashMismatch { .. })), "{r:?}");
         let _ = std::fs::remove_dir_all(&d);
@@ -463,7 +461,6 @@ mod tests {
         let h = load(&d, "ok").unwrap();
         let r = verify(&clean_cfg(), &d, &h, |_| crate::pipeline::GateResult::Pass {
             reason: String::new(),
-            names: vec![],
         });
         assert!(r.is_ok(), "{r:?}");
         let _ = std::fs::remove_dir_all(&d);
@@ -502,7 +499,6 @@ mod tests {
         c.mode = Mode::Dry;
         let r = verify(&c, &d, &h, |_| crate::pipeline::GateResult::Pass {
             reason: String::new(),
-            names: vec![],
         });
         assert!(matches!(r, Err(Refusal::ModeChanged { .. })), "{r:?}");
         let _ = std::fs::remove_dir_all(&d);
@@ -515,7 +511,6 @@ mod tests {
         save(&d, &h).unwrap();
         let r = verify(&clean_cfg(), &d, &h, |_| crate::pipeline::GateResult::Pass {
             reason: String::new(),
-            names: vec![],
         });
         assert!(matches!(r, Err(Refusal::MissingFile(_))), "{r:?}");
         let _ = std::fs::remove_dir_all(&d);
@@ -533,7 +528,6 @@ mod tests {
         }
         let r = verify(&clean_cfg(), &d, &h, |_| crate::pipeline::GateResult::Pass {
             reason: String::new(),
-            names: vec![],
         });
         assert!(matches!(r, Err(Refusal::Permissions(_))), "{r:?}");
         let _ = std::fs::remove_dir_all(&d);

@@ -88,8 +88,13 @@ fn load_config() -> Option<config::Config> {
     if let Some(written) = config::create_default() {
         eprintln!("tgw: created {}", written.display());
     }
-    let (cfg, path) = config::load();
-    let mut problems = cfg.validate();
+    let (cfg, path, parse_problems) = config::load();
+    // Parse problems come first: an unknown key or a typo means the file was
+    // not understood, so nothing in it can be trusted. These used to be
+    // discarded here, which let a block run on a config that had failed to
+    // parse.
+    let mut problems = parse_problems;
+    problems.extend(cfg.validate());
     if let Some(p) = &path {
         if !p.exists() {
             problems.insert(0, format!("no config file at {}", p.display()));
@@ -313,8 +318,8 @@ fn cmd_approve(rest: &[String]) -> i32 {
     let state = cfg.state_dir();
     let log = tgw::log::Log::new(cfg.log_dir(), 200);
 
-    // `hold_rules` and the `auto` lock are both reasons a pass may not simply
-    // run; approval is the human saying yes, so neither applies here.
+    // The `auto` lock is a reason a pass may not simply run; approval is the
+    // human saying yes, so it does not apply here.
     let hold = match holds::load(&state, &rest[0]) {
         Ok(h) => h,
         Err(e) => {
@@ -456,7 +461,6 @@ fn cmd_status(rest: &[String]) -> i32 {
     }
     println!("state: {}", state.display());
     println!("log: {}", cfg.log_dir().display());
-    println!("hold_rules: {}", if cfg.hold_rules.is_empty() { "(none)".to_string() } else { cfg.hold_rules.join(", ") });
 
     let pending = holds::pending(&state);
     println!("pending holds: {}", pending.len());
@@ -509,13 +513,12 @@ fn cmd_log(rest: &[String]) -> i32 {
 ///
 /// Every check is something that would otherwise fail silently in daily use:
 /// a clipboard command that prints nothing, a gate that passes everything, a
-/// `hold_rules` name that no longer exists after a `tgr` upgrade, a notify
-/// command that cannot run, a state dir that cannot be written.
+/// notify command that cannot run, a state dir that cannot be written.
 fn cmd_doctor(rest: &[String]) -> i32 {
     if !rest.is_empty() {
         return usage("doctor", "doctor takes no arguments");
     }
-    let (cfg, path) = config::load();
+    let (cfg, path, parse_problems) = config::load();
     let mut failed = 0;
     let mut warn = 0;
     let ok = |m: &str| println!("ok:    {m}");
@@ -533,6 +536,9 @@ fn cmd_doctor(rest: &[String]) -> i32 {
             &mut failed,
             "no config directory (set TCX_HOME or HOME)".into(),
         ),
+    }
+    for p in parse_problems {
+        bad(&mut failed, p);
     }
     for p in cfg.validate() {
         bad(&mut failed, p);
@@ -600,43 +606,6 @@ fn cmd_doctor(rest: &[String]) -> i32 {
             format!("the gate did not block `rm -rf /tmp/...`: {other:?} — it may not be the gate you think"),
         ),
         (_, Err(e)) => bad(&mut failed, format!("cannot write a doctor sample: {e}")),
-    }
-    // `hold_rules` must name rules that exist. A typo means a hold that
-    // silently never happens.
-    match gate_rule_names(&cfg) {
-        Some(names) if !names.is_empty() => {
-            let unknown: Vec<&str> = cfg
-                .hold_rules
-                .iter()
-                .filter(|r| !names.contains(r))
-                .map(|r| r.as_str())
-                .collect();
-            if unknown.is_empty() {
-                ok(&format!(
-                    "hold_rules ({} name(s)) all exist in the gate",
-                    cfg.hold_rules.len()
-                ));
-            } else {
-                bad(
-                    &mut failed,
-                    format!(
-                        "hold_rules names not reported by `--list-rules`: {}",
-                        unknown.join(", ")
-                    ),
-                );
-            }
-        }
-        Some(names) => bad(
-            &mut failed,
-            format!(
-                "the gate answered `--list-rules` with no rules ({} line(s)); it may not be the gate you think",
-                names.len()
-            ),
-        ),
-        None => bad(
-            &mut failed,
-            "the gate cannot be asked for its rules, so hold_rules cannot be checked".into(),
-        ),
     }
     let _ = std::fs::remove_file(&clean);
     let _ = std::fs::remove_file(&dangerous);
@@ -725,58 +694,6 @@ fn cmd_doctor(rest: &[String]) -> i32 {
         println!("all checks passed.");
         0
     }
-}
-
-/// Asks the gate for its rule names, so `hold_rules` can be checked.
-///
-/// `gate_cmd` is a *checking* command (`tgr --check {file}`), and `tgr`
-/// rejects `--check` together with `--list-rules`. So the checking flags and
-/// the `{file}` token are dropped and `--list-rules` is asked on its own,
-/// against the same program. A gate that cannot be asked that way returns
-/// `None`, which `doctor` reports rather than passing silently.
-fn gate_rule_names(cfg: &config::Config) -> Option<Vec<String>> {
-    let argv = config::split_argv(&cfg.gate_cmd).ok()?;
-    if argv.is_empty() {
-        return None;
-    }
-    let mut ask: Vec<String> = vec![argv[0].clone()];
-    let mut skip_next = false;
-    for a in &argv[1..] {
-        if skip_next {
-            skip_next = false;
-            continue;
-        }
-        if a == "--check" || a == "-c" {
-            // `--check PATH`: drop the flag and its value.
-            skip_next = true;
-            continue;
-        }
-        if a.contains("{file}") {
-            continue;
-        }
-        ask.push(a.clone());
-    }
-    if ask.iter().any(|a| a == "--list-rules") {
-        return None;
-    }
-    let out = std::process::Command::new(&ask[0])
-        .args(&ask[1..])
-        .arg("--list-rules")
-        .stdin(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    Some(
-        String::from_utf8_lossy(&out.stdout)
-            .lines()
-            .map(str::trim)
-            .filter(|l| !l.is_empty())
-            .map(String::from)
-            .collect(),
-    )
 }
 
 fn which(prog: &str) -> bool {

@@ -52,14 +52,14 @@ test that fails if the property is broken.
 
 - **Never classify risk.** `tgw` does not parse a block. It runs
   `gate_cmd` (normally `tgr --check {file}`), reads an exit code, and maps it.
-  The rule names on stderr are used for display and for `hold_rules`, never as
-  a judgement of their own.
+  The rule names on stderr are used only to explain a verdict to the human,
+  never as a judgement of their own.
 - **Never bypass the gate.** There is no flag, no config key and no mode that
   skips `gate_cmd`. `dry` runs nothing; `confirm` waits for a human; `auto`
   runs a pass. There is exactly one call site of the executor, and it is
   reachable only from a pass.
-- **Never make a verdict looser than the gate's.** `hold_rules` can turn a pass
-  into a hold. Nothing can turn a block or a gate error into a run.
+- **Never make a verdict looser than the gate's.** Nothing in `watch.ini` can
+  turn a block or a gate error into a run: the exit code is the whole verdict.
 - **Never read the guard's config.** `~/.config/trex-guard` belongs to the
   guards. `tgw` only ever *executes* the gate binary; it does not know what a
   rule is.
@@ -131,23 +131,34 @@ The last four are fail-closed: a gate that has not said "safe" has not said
 "safe". The gate runs in its own session and a timeout kills the whole process
 group, so a gate that spawned something cannot outlive it.
 
-## `hold_rules`: the human's veto
+## There is one place rules live
 
-The gate names the rules it matched (`rule=…` and `watch=…` on stderr). You
-can say that some of those names always need a tap, even on a pass:
+`watch.ini` has **no rules, and no list of rule names**. That is deliberate.
 
-```ini
-mode = auto
-hold_rules = rm, mv, git-clean, sed-i
-```
+`hold_rules` used to exist here: a list of gate rule names that always held,
+even on a pass. It was removed because it was a second place to express "I want
+to see this before it runs", competing with the rules in the guards' own
+`config.ini`. Two files expressing one decision drift: you edit one and not the
+other, and whichever half you forgot silently stops applying.
 
-A pass whose names include one of these becomes a hold. Only **names** live
-here: the patterns are `tgr`'s, in its `[watch-rules]` section, so the two
-programs cannot drift apart. `tgw` never pattern-matches.
+It was also nearly inert. A hold only changes a **pass**:
 
-The names come from `tgr --list-rules`; `tgw doctor` fails if a name in
-`hold_rules` is not there, because a typo means a hold that silently never
-happens.
+| Gate verdict | What `tgw` does | Was `hold_rules` consulted? |
+| --- | --- | --- |
+| danger (exit 1) | blocked | no — already stricter than a hold |
+| review (exit 3) | held | no — already held |
+| safe (exit 0) | runs in `auto`, held in `confirm` | **yes** |
+
+So it could only ever matter in `auto` mode, for a name `tgr` actually emits
+from a *safe* block. Most configured names matched nothing.
+
+The replacement is simpler and lives in one place: if you want a command
+reviewed, write it as a **`review` rule in the guard's `config.ini`**. Then the
+gate itself returns `review`, `tgw` holds it in every mode, and there is no
+second list to keep in sync.
+
+An old `watch.ini` that still says `hold_rules = ...` is **refused**, with a
+message saying where those rules belong. It is not silently ignored.
 
 ## Configuration
 
@@ -179,7 +190,7 @@ whose policy follows the repository is not a boundary.
 | `auto_unlock_approvals` | `20` | approvals needed to unlock `auto` |
 | `state_dir` | `$XDG_DATA_HOME/tcx/watch` | 0700; holds, staging, the lock |
 | `log_dir` | `state_dir/log` | `events.log` and kept block copies |
-| `hold_rules` | *(none)* | rule **names** that always hold |
+
 
 Commands are **argv strings**, split without a shell: no `$VAR` expansion, and
 `|`, `;` and `>` are ordinary characters. Values are substituted as whole
@@ -235,10 +246,8 @@ silent:
 - **The clipboard** runs and exits 0. An empty answer is normal.
 - **The gate** passes `echo hello` and blocks `rm -rf /tmp/...`. A gate that
   passes both is not a gate; one that blocks both cannot see `{file}`.
-- **`hold_rules`** against the gate's own `--list-rules`. `gate_cmd` is a
-  checking command and `tgr` rejects `--check` with `--list-rules`, so the
-  checking flags are dropped and the program is asked on its own. A gate that
-  cannot answer, or answers with no rules, fails rather than passing silently.
+- **The config file** parses. Every unknown key and malformed value fails
+  `doctor` *and* `run`; a config that was not understood is not used.
 - **`notify_cmd`** runs, if set. It is a warning, not a failure.
 - **The wakelock program** exists, if set. It is never started.
 - **`mode = auto`** is unlocked. A locked `auto` is a warning; `run` refuses
@@ -295,5 +304,6 @@ declared as `extern "C"` rather than pulled from a crate. The tests run the
 real binary against fake clipboard and gate scripts in a temporary `TCX_HOME`,
 so they exercise the process plumbing, not just the functions.
 
-The safety tests are written to be broken on purpose: making `dry` run, making
-`hold_rules` run, or disabling the approval hash check each makes a test fail.
+The safety tests are written to be broken on purpose: making `dry` run,
+accepting a config that failed to parse, or disabling the approval hash check
+each makes a test fail.

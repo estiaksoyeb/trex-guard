@@ -82,8 +82,8 @@ pub const COMMANDS: &[Command] = &[
         options: &[],
         notes: &[
             "Fails if the gate cannot tell a clean sample from a known-bad one.",
-            "Also checks that every hold_rules name exists in `tgr --list-rules`,",
-            "because a typo there means a hold that silently never happens.",
+            "Also checks that the gate reports its rule names, so it is the",
+            "gate you think it is.",
         ],
     },
     Command {

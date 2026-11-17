@@ -16,11 +16,12 @@
 //! fresh install cannot run anything by accident. `confirm` waits for a human
 //! (slice 5); `auto` runs a pass.
 //!
-//! # `hold_rules` can only make things stricter
+//! # Nothing here can de-escalate
 //!
-//! A pass whose reported rule or watch names include one from `hold_rules`
-//! becomes a hold. There is no config key anywhere that turns a hold or a
-//! block back into a run.
+//! A `Pass` runs (in `auto`), a `Hold` waits for a human, and a `Block` is
+//! refused. There is no config key anywhere in `watch.ini` that turns a hold
+//! or a block back into a run: the gate owns the verdict, and `watch.ini` only
+//! chooses what a verdict *means* for execution.
 
 use std::time::{Duration, Instant};
 
@@ -31,27 +32,14 @@ use crate::log::{Entry, Log, Verdict};
 /// What the gate said. Only these three exist: anything else is a block.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GateResult {
-    /// Nothing matched: safe. `reason` still carries any watch names, and
-    /// `names` is every rule and watch the gate reported, so the `hold_rules`
-    /// mapping can see them.
-    Pass {
-        reason: String,
-        names: Vec<String>,
-    },
+    /// Nothing matched: safe. `reason` carries any watch names, for the log.
+    Pass { reason: String },
     /// At least one danger rule matched. Can never be approved.
     Block { reason: String },
     /// Passed, but needs a human. `reason` names the rule(s).
     Hold { reason: String },
     /// The gate failed, timed out, or answered something unrecognised.
     Error { reason: String },
-}
-
-/// The names a gate answer reported, for `hold_rules` matching.
-fn gate_names(gate: &GateResult) -> Vec<String> {
-    match gate {
-        GateResult::Pass { names, .. } => names.clone(),
-        _ => Vec::new(),
-    }
 }
 
 /// Debug rendering of one clipboard pass, for `tgw once` and the log.
@@ -203,11 +191,7 @@ fn outcome_from_gate(
     started: Instant,
     text: &str,
 ) -> Outcome {
-    // `hold_rules` is applied *before* the mode, so a name match can only
-    // turn a pass into a hold. A block or a gate error never consults it.
-    let held_by = held_names(&gate, &ctx.cfg.hold_rules);
     let (verdict, exit) = match &gate {
-        GateResult::Pass { .. } if !held_by.is_empty() => (Verdict::Hold, Some(0)),
         GateResult::Pass { .. } => match ctx.cfg.mode {
             Mode::Dry => (Verdict::Hold, Some(0)), // logged as hold: it *would* run
             Mode::Confirm => (Verdict::Hold, Some(0)),
@@ -219,11 +203,8 @@ fn outcome_from_gate(
     };
 
     let reason = match &gate {
-        GateResult::Pass { .. } if !held_by.is_empty() => {
-            format!("hold_rules matched: {}", held_by.join(", "))
-        }
-        GateResult::Pass { reason, .. } if reason.trim().is_empty() => "gate passed".to_string(),
-        GateResult::Pass { reason, .. } => format!("gate passed: {reason}"),
+        GateResult::Pass { reason } if reason.trim().is_empty() => "gate passed".to_string(),
+        GateResult::Pass { reason } => format!("gate passed: {reason}"),
         GateResult::Hold { reason } => reason.clone(),
         GateResult::Block { reason } => reason.clone(),
         GateResult::Error { reason } => format!("gate error: {reason}"),
@@ -297,17 +278,6 @@ fn outcome_from_gate(
         duration_ms,
         staged: Some(staged),
     }
-}
-
-/// Which configured `hold_rules` names the gate reported. Empty for anything
-/// that is not a pass: a block is already harsher than a hold.
-fn held_names(gate: &GateResult, hold_rules: &[String]) -> Vec<String> {
-    let names = gate_names(gate);
-    hold_rules
-        .iter()
-        .filter(|r| names.iter().any(|n| n == *r))
-        .cloned()
-        .collect()
 }
 
 /// The verdict after running: success is `Run`, anything else is a hold-worthy
@@ -416,7 +386,6 @@ mod tests {
         for gate in [
             GateResult::Pass {
                 reason: String::new(),
-                names: Vec::new(),
             },
             GateResult::Hold { reason: "r".into() },
             GateResult::Block { reason: "r".into() },

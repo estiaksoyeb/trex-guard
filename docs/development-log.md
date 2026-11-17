@@ -835,3 +835,49 @@ A test-harness fault caught along the way: the config tests set `TCX_HOME` but
 not `HOME`, so the new search reached the real `~/.config/tcx/watch.ini` and
 passed or failed depending on what was installed on the machine. `Home::run`
 now isolates `HOME` and `XDG_CONFIG_HOME` too.
+
+### `hold_rules` removed, and the fail-open it was hiding
+
+`hold_rules` was a list of gate rule names in `watch.ini` that always held,
+even when the gate passed the block. Removed.
+
+The reason is the one the user gave: there should be one source of truth, and
+the guard's `config.ini` already is it. Two files expressing "I want to see
+this before it runs" drift apart — you edit one and not the other, and the half
+you forgot silently stops applying.
+
+It was also barely doing anything. A hold only changes a **pass**: a danger is
+already blocked and a review is already held, so `hold_rules` was consulted for
+neither. It could only ever matter in `auto` mode, for a name `tgr` emits from
+a *safe* block. In the shipped list of six names, three (`mv`, `sed-i`,
+`git-checkout`) are not rule names `tgr` produces at all, and two had their own
+review/danger verdict already. Only `rm` could fire.
+
+Worse, `doctor` accepted those names because it validated against
+`tgr --list-rules` — which includes *watch* rules — so a list of six mostly
+inert names passed inspection. A check that passes on a broken config is worse
+than no check.
+
+Anything that should be reviewed now goes in the guard's `config.ini` as a
+`review` rule: the gate returns review, `tgw` holds it in every mode, and one
+file owns the decision. An old `watch.ini` still carrying `hold_rules` is
+refused with a message naming `config.ini`, not silently ignored.
+
+**The bug this uncovered is more serious than the removal.** Writing a test
+that an old `hold_rules` key is refused showed the block *running*. The cause
+had nothing to do with `hold_rules`: `config::load()` called `parse_into` and
+discarded its return value, so **every** parse problem — an unknown key, a
+misspelled `mode`, a malformed number — was thrown away on the real run path.
+Only `check-config` ever displayed them. A `watch.ini` that failed to parse
+left `tgw` running with defaults, which meant a gate line that never took
+effect silently became no gate at all.
+
+`load()` now returns its problems, and both `load_config()` and `doctor` treat
+them as fatal. A config that was not understood is not used. Covered by
+`a_config_that_fails_to_parse_never_runs_a_block`, confirmed to fail with the
+old behaviour restored.
+
+Tests removed rather than rewritten where the behaviour is gone: three
+`doctor` tests for the deleted rule-name check, and the hold-rule escalation
+cases. Kept and re-pointed at what still holds: a pass runs in auto with no
+second list, a danger stays a block, and an old key is refused.
