@@ -85,9 +85,12 @@ test_installs_all_four() {
     make_shims "$WORK/shim-ok" "$assets"
 
     prefix="$WORK/prefix-ok"
-    # HOME is set so a default config.ini is written inside the sandbox, never
-    # into the real user's home when this runs on a developer machine.
-    out=$(PATH="$WORK/shim-ok:$PATH" HOME="$WORK/home-ok" sh "$REPO_ROOT/scripts/install.sh" \
+    # HOME *and* XDG_CONFIG_HOME are set: the installer prefers XDG, which is
+    # set on a CI runner, so setting only HOME made this pass locally and fail
+    # in CI. Both point into the sandbox so nothing touches the real user.
+    out=$(PATH="$WORK/shim-ok:$PATH" HOME="$WORK/home-ok" \
+        XDG_CONFIG_HOME="$WORK/home-ok/.config" \
+        sh "$REPO_ROOT/scripts/install.sh" \
         --prefix "$prefix" 2>&1) || {
         bad "installs all four tools" "installer failed:
 $out"
@@ -167,7 +170,8 @@ test_does_not_overwrite_config() {
     mkdir -p "$home/.config/trex-guard"
     echo "mode = auto" > "$home/.config/trex-guard/config.ini"
 
-    if ! PATH="$WORK/shim-cfg:$PATH" HOME="$home" sh "$REPO_ROOT/scripts/install.sh" \
+    if ! PATH="$WORK/shim-cfg:$PATH" HOME="$home" XDG_CONFIG_HOME="$home/.config" \
+        sh "$REPO_ROOT/scripts/install.sh" \
         --prefix "$WORK/prefix-cfg" >"$WORK/cfg.log" 2>&1; then
         bad "keeps an existing config" "installer failed:
 $(cat "$WORK/cfg.log")"

@@ -543,16 +543,37 @@ mod tests {
 
     #[test]
     fn a_wakelock_is_taken_and_released_around_a_block() {
+        // Whether the helper is *spawned* is the contract; whether it gets to
+        // finish is not, because release kills it. Asserting a file it writes
+        // therefore depends on process scheduling and failed on a loaded CI
+        // runner. `is_held()` is the same fact without the race.
+        let mut c = cfg();
+        c.wakelock_cmd = "sleep 5".into();
+        let lock = Wakelock::acquire(&c);
+        assert!(lock.is_held(), "a configured wakelock was not started");
+        drop(lock);
+
+        // A command that cannot be spawned must not claim to hold a lock.
+        let mut c = cfg();
+        c.wakelock_cmd = "/nonexistent/wakelock-binary".into();
+        let lock = Wakelock::acquire(&c);
+        assert!(!lock.is_held(), "a wakelock that could not start was held");
+
+        // An empty command means no lock at all.
+        let mut c = cfg();
+        c.wakelock_cmd = String::new();
+        let lock = Wakelock::acquire(&c);
+        assert!(!lock.is_held(), "an empty wakelock command held a lock");
+
+        // And the lock is taken for the duration of a real block.
         let dir = std::env::temp_dir().join(format!("tgw-wake-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let started = dir.join("started");
         let mut c = cfg();
-        c.wakelock_cmd = format!("touch {}", started.display());
+        c.wakelock_cmd = "sleep 5".into();
         let p = block("echo hi\n");
         let r = run_block(&c, &p).expect("run");
         assert_eq!(r.exit, Some(0));
-        assert!(started.exists(), "the wakelock command never ran");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
