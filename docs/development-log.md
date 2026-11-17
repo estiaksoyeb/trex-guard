@@ -950,3 +950,51 @@ not answer ble.sh's cursor-position query, so with the real `.bashrc` the shell
 sits at `[ble: press RET to continue]` and never runs the pasted block. Those
 suites are therefore comparing text that is not a verdict from a shell that
 actually ran the block. `tg` is frozen, so this is written down, not changed.
+
+## Releases come from GitHub now, and CI is the gate
+
+The C++ guard is no longer built or shipped. `tgr` is a standalone port that
+reads the same `config.ini`, so a release needs no CMake and no g++. The C++
+source stays in the tree and `test_rules` still runs in CI, because `parity`
+compares the port against it; without a `trex-guard` binary those suites print
+SKIP and pass, which is a green that proves nothing. The Rust job therefore
+builds the reference itself rather than relying on a separate job that cannot
+share a filesystem.
+
+Releases are musl-static for aarch64 and x86_64 — verified against the actual
+artifact, not assumed: the GitHub-built `tgr` reports `statically linked` and
+runs here, and still exits 1 on `rm -rf` and 0 on `echo`.
+
+`tg` falls back to `tgr` when no C++ guard is installed. It also now checks
+both session markers: it used to check only `TREX_GUARD_ACTIVE`, so a `tg`
+inside a `tgr` session recurred instead of refusing. `--help` and `--version`
+are answered before that check, which previously blocked them inside a session.
+
+The installer installs only from a published release and verifies
+`SHA256SUMS`. It has no build-from-source fallback: an unverifiable download
+stops rather than compiling something CI never saw. That is a deliberate
+trade — it needs a working release — and it is why CI had to be green before
+the tag could be pushed.
+
+**Three mistakes CI caught that local runs did not**, which is the argument for
+having the gate at all:
+
+1. A wakelock test asserted a file written by the helper command. The helper
+   is spawned and killed on release, so whether it reached the write depends on
+   scheduling: green here, red on `ubuntu-latest`. It now asserts `is_held()`,
+   which is the actual contract, and the two cases that must *not* hold a lock.
+2. The installer test set `HOME` but the installer prefers `XDG_CONFIG_HOME`,
+   which CI sets. The config landed outside the sandbox. Re-run locally with a
+   hostile `XDG_CONFIG_HOME` to confirm it now matches CI and leaks nothing.
+3. The static-linkage check tested `ldd` output for "not a dynamic". A static
+   musl binary makes `ldd` print "statically linked", so a correctly built
+   x86_64 release failed verification, while aarch64 passed only because `ldd`
+   was absent there. `file` reports linkage exactly.
+
+Each of those three would have blocked every release, and none was a product
+bug. All were tests or checks asserting something that happened to be true on
+one machine.
+
+Clippy is reported but not enforced. There are ~30 pre-existing style
+warnings; failing a release on a collapsible `if` is noise, but the output is
+kept so a lint that could hide a defect can be promoted and fixed.
