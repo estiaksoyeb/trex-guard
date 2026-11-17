@@ -411,13 +411,19 @@ The prompt text lives in a file, never in the binary, because the rules change
 far more often than the tool is rebuilt. First found wins:
 
 1. `--template FILE`
-2. `$TCX_HOME/config/prompt.md`
-3. `<config>/tcx/prompt.md` (i.e. `~/.config/tcx/prompt.md`)
+2. `<config>/prompt.md` (with `TCX_HOME` set: `$TCX_HOME/config/prompt.md`,
+   else `~/.config/tcx/prompt.md`)
+3. `<config>/tg/prompt.md` (the legacy name)
 
 **The repository is never consulted.** A checkout must not be able to change
-the rules an AI is given, which is also why the template is not installed into
-the repo and no `.tg/prompt.md` is shipped. On this machine the file is
+the rules an AI is given, which is why no `.tg/prompt.md` or repo-root
+`prompt.md` is ever read. On this machine the file is
 `~/.local/share/tcx-home/config/prompt.md` because `TCX_HOME` is set.
+
+A released install is seeded with the default at `examples/prompt.md` by
+`install.sh`, which writes it to the same place `txc` looks (honouring
+`TCX_HOME`) and never overwrites an existing file. That file is a copy inside
+the tarball, not embedded in the binary, so editing it needs no rebuild.
 
 The path actually used is printed to **stderr**, and the prompt to stdout: the
 program never invokes a clipboard tool. Use `tg fresh | clip` (or any other

@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/tcx", "crates/tgr", "crates/tgw"]
 
 [workspace.package]
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/estiaksoyeb/trex-guard"

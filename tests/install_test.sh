@@ -42,6 +42,7 @@ STUB
     done
     cp "$REPO_ROOT/scripts/tg" "$stage/tg"
     cp "$REPO_ROOT/examples/config.ini" "$stage/config.ini"
+    cp "$REPO_ROOT/examples/prompt.md" "$stage/prompt.md"
     tar -czf "$dir/trex-guard-${arch}.tar.gz" -C "$dir" "trex-guard-${arch}"
     ( cd "$dir" && sha256sum "trex-guard-${arch}.tar.gz" > SHA256SUMS )
 }
@@ -110,6 +111,15 @@ $out"
         ok "writes a default config when none exists"
     else
         bad "writes a default config when none exists" "no config.ini under HOME"
+    fi
+
+    # `tg fresh` is the product command and it dies without a template, so the
+    # prompt must be installed next to the store, not only the binaries.
+    if cmp -s "$REPO_ROOT/examples/prompt.md" "$WORK/home-ok/.config/tcx/prompt.md"; then
+        ok "installs the workflow prompt when none exists"
+    else
+        bad "installs the workflow prompt when none exists" \
+            "no identical prompt.md under XDG_CONFIG_HOME/tcx"
     fi
 }
 
@@ -181,6 +191,56 @@ $(cat "$WORK/cfg.log")"
         ok "keeps an existing config"
     else
         bad "keeps an existing config" "user config was overwritten"
+    fi
+}
+
+test_does_not_overwrite_prompt() {
+    assets="$WORK/assets-prompt"
+    mkdir -p "$assets"
+    make_release "$assets" "$ARCH_TAG"
+    make_shims "$WORK/shim-prompt" "$assets"
+
+    home="$WORK/home-prompt"
+    mkdir -p "$home/.config/tcx"
+    echo "MY RULES" > "$home/.config/tcx/prompt.md"
+
+    if ! PATH="$WORK/shim-prompt:$PATH" HOME="$home" XDG_CONFIG_HOME="$home/.config" \
+        sh "$REPO_ROOT/scripts/install.sh" \
+        --prefix "$WORK/prefix-prompt" >"$WORK/prompt.log" 2>&1; then
+        bad "keeps an existing prompt" "installer failed:
+$(cat "$WORK/prompt.log")"
+        return
+    fi
+    if [ "$(cat "$home/.config/tcx/prompt.md")" = "MY RULES" ]; then
+        ok "keeps an existing prompt"
+    else
+        bad "keeps an existing prompt" "user prompt was overwritten"
+    fi
+}
+
+# TCX_HOME overrides XDG for the store, so the prompt must follow it, or tcx
+# would look in one place and the installer write to another.
+test_prompt_follows_tcx_home() {
+    assets="$WORK/assets-tcxhome"
+    mkdir -p "$assets"
+    make_release "$assets" "$ARCH_TAG"
+    make_shims "$WORK/shim-tcxhome" "$assets"
+
+    home="$WORK/home-tcxhome"
+    tcx_home="$WORK/tcxhome"
+    if ! PATH="$WORK/shim-tcxhome:$PATH" HOME="$home" \
+        XDG_CONFIG_HOME="$home/.config" TCX_HOME="$tcx_home" \
+        sh "$REPO_ROOT/scripts/install.sh" \
+        --prefix "$WORK/prefix-tcxhome" >"$WORK/tcxhome.log" 2>&1; then
+        bad "prompt follows TCX_HOME" "installer failed:
+$(cat "$WORK/tcxhome.log")"
+        return
+    fi
+    if cmp -s "$REPO_ROOT/examples/prompt.md" "$tcx_home/config/prompt.md" \
+        && [ ! -e "$home/.config/tcx/prompt.md" ]; then
+        ok "prompt follows TCX_HOME"
+    else
+        bad "prompt follows TCX_HOME" "prompt not under \$TCX_HOME/config"
     fi
 }
 
@@ -261,6 +321,8 @@ test_rejects_bad_checksum
 test_missing_asset_fails
 test_rejects_unsupported_flag
 test_does_not_overwrite_config
+test_does_not_overwrite_prompt
+test_prompt_follows_tcx_home
 test_tg_runs_tgr
 test_removes_old_cpp_guard
 test_tg_refuses_nested_session

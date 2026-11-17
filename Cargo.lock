@@ -98,11 +98,11 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "tcx"
-version = "0.2.1"
+version = "0.2.2"
 
 [[package]]
 name = "tgr"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "fancy-regex",
  "nix",
@@ -110,4 +110,4 @@ dependencies = [
 
 [[package]]
 name = "tgw"
-version = "0.2.1"
+version = "0.2.2"

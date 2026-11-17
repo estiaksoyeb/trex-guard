@@ -1,5 +1,30 @@
 # Development Log
 
+## 2026-11-17 — v0.2.2: the workflow prompt now ships with the release
+
+Rule 2 of the prompt template was changed to ban `;`-joined batches (`set +H`,
+`{`, labelled commands one per line, `} | clip`). Editing the template exposed
+a gap: nothing shipped it. `briefing::template` reads only
+`<config>/prompt.md`, `install.sh` installed no file, and `examples/` had no
+copy — so a fresh install had a `tg fresh` that exited 1 with "no prompt
+template found", while the human who wrote the rules had one only because it
+was hand-placed here.
+
+The file stays out of the binary. `examples/prompt.md` is copied into the
+release tarball next to `config.ini`, and `install.sh` seeds it to
+`$TCX_HOME/config/prompt.md` when `TCX_HOME` is set, else
+`$XDG_CONFIG_HOME/tcx/prompt.md` — the two places `tcx` actually looks —
+creating directories as needed and **never overwriting** an existing file (the
+same rule as `config.ini`). Embedding it with `include_str!` was rejected: it
+would let a shipped binary hand an AI rules the user never chose, and force a
+rebuild whenever a rule changes.
+
+Two installer tests cover it: the prompt appears on a clean install, and a
+user's own `prompt.md` survives an upgrade; a third proves the destination
+follows `TCX_HOME` rather than XDG. `docs/tcx.md` also said the legacy
+fallback was `<config>/tcx/prompt.md`; the code uses `<config>/tg/prompt.md`,
+and the doc now matches the code.
+
 ## 2026-11-17 — `tgr`: the guard, ported to Rust, beside the original
 
 The C++ guard works and stays installed. `tgr` was built as a **parallel**

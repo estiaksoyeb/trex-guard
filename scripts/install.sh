@@ -168,6 +168,28 @@ else
     log_info "kept existing ${GUARD_CONFIG_DIR}/config.ini"
 fi
 
+# The workflow prompt is what `tg fresh` prints. Without it `fresh` fails with
+# "no prompt template found", so a fresh install would ship a tool whose main
+# command does not work. Same rule as the guard config: installed only when
+# absent, never overwritten, because the rules are yours to edit.
+#
+# Location follows tcx's own lookup: $TCX_HOME/config when TCX_HOME is set,
+# else $XDG_CONFIG_HOME/tcx (then ~/.config/tcx). It is not tied to BIN_DIR.
+if [ -n "${TCX_HOME:-}" ]; then
+    TCX_CONFIG_DIR="${TCX_HOME}/config"
+else
+    TCX_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/tcx"
+fi
+mkdir -p "$TCX_CONFIG_DIR"
+if [ ! -f "${TCX_CONFIG_DIR}/prompt.md" ] && [ -f "${STAGE}/prompt.md" ]; then
+    install -m 644 "${STAGE}/prompt.md" "${TCX_CONFIG_DIR}/prompt.md"
+    log_info "created ${TCX_CONFIG_DIR}/prompt.md (workflow rules)"
+elif [ -f "${TCX_CONFIG_DIR}/prompt.md" ]; then
+    log_info "kept existing ${TCX_CONFIG_DIR}/prompt.md"
+else
+    log_warn "release has no prompt.md; run `tg fresh` will not work until you write ${TCX_CONFIG_DIR}/prompt.md"
+fi
+
 # 6. Verify what was installed actually runs. A binary that cannot execute on
 #    this host (wrong libc, wrong arch) should fail here, not at first paste.
 for tool in tgr tgw tcx; do
@@ -191,9 +213,11 @@ echo "  Tools:      tgr, tgw, tcx"
 echo "  Launcher:   tg"
 echo "  Directory:  ${BIN_DIR}"
 echo "  Rules:      ${GUARD_CONFIG_DIR}/config.ini"
+echo "  Prompt:     ${TCX_CONFIG_DIR}/prompt.md"
 echo ""
 echo "Quick start:"
 echo "  tg          launch a guarded shell"
+echo "  tg fresh | clip   start a chat with the workflow prompt"
 echo "  tgr --help  the guard on its own"
 echo "  tcx --help  the context store"
 echo "  tgw --help  the clipboard watchdog"

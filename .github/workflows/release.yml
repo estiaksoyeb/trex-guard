@@ -63,6 +63,7 @@ jobs:
           done
           cp scripts/tg "$stage/tg"
           cp examples/config.ini "$stage/config.ini"
+          cp examples/prompt.md "$stage/prompt.md"
           for f in "$stage"/*; do
             file "$f"
           done

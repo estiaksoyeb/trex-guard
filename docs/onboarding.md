@@ -207,6 +207,12 @@ If that happens, source the integration file rather than moving the template.
 `tcx fresh --help` documents the fallback *order*; the template path actually
 used is printed to stderr on every run.
 
+A release install seeds this file from `examples/prompt.md` (copied into the
+tarball, not compiled into `tcx`): `install.sh` writes it to
+`$TCX_HOME/config/prompt.md` when `TCX_HOME` is set, else
+`$XDG_CONFIG_HOME/tcx/prompt.md`, and never overwrites an existing copy. So a
+fresh install works under either layout, and edits still need no rebuild.
+
 **The repository is never consulted.** A cloned repo must not be able to change
 the rules an AI is given.
 
