@@ -10,7 +10,19 @@ set -e
 # copy of the command list is a copy that goes stale.
 
 if [ "$1" = "--version" ] || [ "$1" = "-v" ]; then
-    echo "tcx (trex-guard wrapper) 0.1.0"
+    # Answer from the binary, as the comment above says. A literal here said
+    # 0.1.0 while the release was 0.2.1.
+    SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+    for candidate in \
+        "$(command -v tcx 2>/dev/null)" \
+        "$SCRIPT_DIR/../target/release/tcx" \
+        "$SCRIPT_DIR/../target/debug/tcx"
+    do
+        if [ -n "$candidate" ] && [ -x "$candidate" ] && [ "$candidate" != "$0" ]; then
+            exec "$candidate" --version
+        fi
+    done
+    echo "tcx (trex-guard launcher) version unknown: tcx not found"
     exit 0
 fi
 

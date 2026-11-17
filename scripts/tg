@@ -16,7 +16,16 @@ if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
 fi
 
 if [ "$1" = "--version" ] || [ "$1" = "-v" ]; then
-    echo "tg (trex-guard wrapper) 0.1.0"
+    # Ask the guard rather than printing a copy: a hardcoded string here said
+    # 0.1.0 while the release was 0.2.1, which is a version that cannot drift
+    # out of step only if nobody writes it down twice.
+    SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+    for candidate in "$SCRIPT_DIR/tgr" "$(command -v tgr 2>/dev/null)"; do
+        if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+            exec "$candidate" --version
+        fi
+    done
+    echo "tg (trex-guard launcher) version unknown: tgr not found"
     exit 0
 fi
 

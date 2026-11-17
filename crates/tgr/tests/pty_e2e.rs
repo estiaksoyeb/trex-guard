@@ -169,22 +169,25 @@ fn a_review_paste_is_prompted_but_not_treated_as_danger() {
 
 #[test]
 fn tg_still_starts_inside_a_tgr_session() {
-    // The whole reason for a separate marker. `scripts/tg` exits with a notice
-    // when TREX_GUARD_ACTIVE=1; if tgr set that variable, a tgr session could
-    // never run the C++ guard. This runs the real installed `tg` inside a real
-    // `tgr` and requires it to answer for itself.
+    // `tg` refuses to start when a guarded session is already active. `tgr`
+    // sets TGR_ACTIVE, not TREX_GUARD_ACTIVE, so `tg` inside a `tgr` session
+    // must work rather than think it is already guarded. This runs the real
+    // installed `tg` inside a real `tgr` and requires it to answer.
     if which("tg").is_none() {
         eprintln!("SKIP: no `tg` on PATH");
         return;
     }
     let (screen, _) = drive_with("tg --version\n", None);
     assert!(
-        screen.contains("trex-guard wrapper"),
-        "tg refused to start inside tgr, so the session markers are confused:\n{screen}"
-    );
-    assert!(
         !screen.contains("already active"),
-        "tg thought a tg session was already active inside tgr:\n{screen}"
+        "tg thought a guarded session was already active inside tgr:\n{screen}"
+    );
+    // `tg --version` answers from the guard, so this is the guard's version
+    // line. The exact number is not asserted: a version bump is not a test
+    // failure.
+    assert!(
+        screen.contains("tgr version") || screen.contains("version unknown"),
+        "tg did not answer for itself inside tgr:\n{screen}"
     );
 }
 
