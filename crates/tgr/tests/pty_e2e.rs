@@ -244,3 +244,230 @@ fn the_child_sees_the_tgr_marker_not_the_tg_one() {
          session is active (read: {seen:?}):\n{screen}"
     );
 }
+
+/// Drives `tgr`, types `keys`, and waits for the guard **process** to exit.
+///
+/// Returns `Some(status)` if it exited within `deadline`, `None` if it had to
+/// be killed. Separate from `drive_with` because that driver always SIGKILLs
+/// its child, so it cannot tell "exited" from "hung" — which is exactly the
+/// bug this checks for.
+fn drive_until_exit(keys: &str, deadline: std::time::Duration) -> Option<i32> {
+    let script = format!(
+        r#"
+import sys, os, pty, time, select, signal
+sys.path.insert(0, {support})
+from drive_pty import plain
+
+pid, fd = pty.fork()
+if pid == 0:
+    os.environ.pop("TGR_ACTIVE", None)
+    os.environ["PS1"] = "TGRPROMPT> "
+    os.execv({binary}, [{binary}, "--norc"])
+
+out = b""
+def pump(seconds):
+    global out
+    end = time.time() + seconds
+    while time.time() < end:
+        r, _, _ = select.select([fd], [], [], 0.05)
+        if r:
+            try:
+                chunk = os.read(fd, 65536)
+            except OSError:
+                return False
+            if not chunk:
+                return False
+            out += chunk
+    return True
+
+# Wait for the prompt so the keystrokes reach a live shell.
+start = time.time()
+while time.time() - start < 5.0:
+    if not pump(0.05):
+        break
+    if b"TGRPROMPT>" in out:
+        break
+
+# Keys arrive as a list of byte values, so a control character or a CR
+# cannot be mangled by string escaping on either side.
+for key in {keys}:
+    os.write(fd, bytes([key]))
+    pump(0.15)
+
+# Now the real question: does the guard itself go away?
+#
+# EOF on the pty (EIO) only means the *shell* is gone; the guard still has to
+# reap it and exit. So keep waiting for the guard after EOF rather than
+# stopping at it -- breaking here would report a hang that is not there.
+eof = False
+end = time.time() + {deadline}
+while time.time() < end:
+    if not eof and not pump(0.05):
+        eof = True
+    w, status = os.waitpid(pid, os.WNOHANG)
+    if w:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        sys.stdout.write("EXITED " + str(os.waitstatus_to_exitcode(status)))
+        sys.exit(0)
+
+os.kill(pid, signal.SIGKILL)
+os.waitpid(pid, 0)
+sys.stdout.write("HUNG")
+sys.exit(0)
+"#,
+        support = py_repr(helper().parent().unwrap().to_str().unwrap()),
+        binary = py_repr(tgr_binary().to_str().unwrap()),
+        keys = {
+            // A Python list literal of byte values. `{:?}` on a Rust string
+            // would emit `\u{4}`, which is a Python syntax error, so the
+            // script would die and the test would report a hang that is not
+            // there.
+            let items: Vec<String> = keys.bytes().map(|b| b.to_string()).collect();
+            format!("[{}]", items.join(", "))
+        },
+        deadline = 3.0,
+    );
+    let out = Command::new("python3")
+        .arg("-c")
+        .arg(&script)
+        .output()
+        .expect("python3 must be available for the pty tests");
+    let text = String::from_utf8_lossy(&out.stdout);
+    match text.split_whitespace().next() {
+        Some("EXITED") => text
+            .split_whitespace()
+            .nth(1)
+            .and_then(|c| c.parse().ok()),
+        _ => None,
+    }
+}
+
+#[test]
+fn the_guard_exits_when_the_shell_does() {
+    // The reported bug: typing `exit` printed `exit` and then nothing. The
+    // shell had exited and was left as a zombie while `tgr` spun at 100% CPU.
+    //
+    // Cause: when the pty slave closes, `poll` reports the master as always
+    // ready with POLLHUP. The relay only asked for and checked POLLIN, so it
+    // never read the EOF, never returned to `waitpid`, and looped as fast as
+    // the CPU allowed.
+    assert_eq!(
+        drive_until_exit("exit\r", std::time::Duration::from_secs(3)),
+        Some(0),
+        "tgr did not exit after the shell was told to"
+    );
+}
+
+#[test]
+fn ctrl_d_exits_the_guard_too() {
+    // Ctrl-D is EOF for the shell: same path, same hang before the fix.
+    let status = drive_until_exit("\u{4}\u{4}", std::time::Duration::from_secs(3));
+    assert!(
+        status.is_some(),
+        "tgr did not exit after Ctrl-D (the shell treats it as EOF)"
+    );
+}
+
+/// Starts `tgr` in a pty, sends `signal`, and waits for the guard to exit.
+///
+/// Returns `Some(elapsed_secs, orphaned_children)` if it exited within the
+/// deadline, `None` if it had to be killed. `orphaned_children` is read from
+/// `/proc` after the guard is gone, so a shell left running behind the guard
+/// is reported rather than missed.
+fn drive_until_signalled(signal: &str, deadline: std::time::Duration) -> Option<(f64, usize)> {
+    let script = format!(
+        r#"
+import sys, os, pty, time, select, signal
+
+pid, fd = pty.fork()
+if pid == 0:
+    os.environ.pop("TGR_ACTIVE", None)
+    os.environ["PS1"] = "TGRPROMPT> "
+    os.execv({binary}, [{binary}, "--norc"])
+
+out = b""
+start = time.time()
+while time.time() - start < 5.0:
+    r, _, _ = select.select([fd], [], [], 0.05)
+    if r:
+        try:
+            chunk = os.read(fd, 65536)
+        except OSError:
+            break
+        if not chunk:
+            break
+        out += chunk
+        if b"TGRPROMPT>" in out:
+            break
+
+# Record the children before signalling, so what is left afterwards is
+# exactly what the guard failed to clean up.
+# `ps` rather than /proc/<pid>/task/<tid>/children, which is not readable
+# from here.
+listing = os.popen("ps -o pid= --ppid " + str(pid)).read().split()
+before = set(int(c) for c in listing if c.isdigit())
+
+os.kill(pid, getattr(signal, {signal}))
+t0 = time.time()
+while time.time() - t0 < {deadline}:
+    w, status = os.waitpid(pid, os.WNOHANG)
+    if w:
+        break
+    time.sleep(0.05)
+else:
+    os.kill(pid, signal.SIGKILL)
+    os.waitpid(pid, 0)
+    sys.stdout.write("HUNG")
+    sys.exit(0)
+
+# Give the kernel a moment to reparent, then count survivors.
+time.sleep(0.2)
+alive = 0
+for c in before:
+    try:
+        os.kill(c, 0)
+        alive += 1
+        os.kill(c, signal.SIGKILL)
+    except OSError:
+        pass
+sys.stdout.write("EXITED %.2f %d" % (time.time() - t0, alive))
+"#,
+        binary = py_repr(tgr_binary().to_str().unwrap()),
+        signal = py_repr(signal),
+        deadline = deadline.as_secs_f64(),
+    );
+    let out = Command::new("python3")
+        .arg("-c")
+        .arg(&script)
+        .output()
+        .expect("python3 must be available for the pty tests");
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut parts = text.split_whitespace();
+    if parts.next() != Some("EXITED") {
+        return None;
+    }
+    let secs = parts.next().and_then(|s| s.parse().ok())?;
+    let orphans = parts.next().and_then(|s| s.parse().ok())?;
+    Some((secs, orphans))
+}
+
+#[test]
+fn sigterm_ends_the_guard_and_the_shell() {
+    // The second reported bug: `kill tgr` did nothing. The handler set a flag
+    // that stopped the relay loop, but the signal was never passed to the
+    // shell, so `waitpid` blocked on a shell that was still running.
+    //
+    // Interactive bash ignores SIGTERM and SIGHUP by design, so forwarding
+    // alone is not enough: the guard waits briefly, then kills the shell the
+    // way closing the terminal would.
+    let (secs, orphans) = drive_until_signalled("SIGTERM", std::time::Duration::from_secs(3))
+        .expect("tgr did not exit after SIGTERM");
+    assert!(
+        secs < 3.0,
+        "tgr took {secs:.2}s to exit after SIGTERM, so it hung first"
+    );
+    assert_eq!(orphans, 0, "the guarded shell survived tgr");
+}

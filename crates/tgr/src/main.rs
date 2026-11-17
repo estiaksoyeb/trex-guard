@@ -71,7 +71,10 @@ extern "C" fn on_sigwinch(_: i32) {
     pty::WINDOW_CHANGED.store(true, Ordering::SeqCst);
 }
 
-extern "C" fn on_terminate(_: i32) {
+extern "C" fn on_terminate(sig: i32) {
+    // Record which signal arrived before the flag, so the loop can never see
+    // the flag and an empty signal number.
+    tgr::TERMINATE_SIGNAL.store(sig, Ordering::SeqCst);
     tgr::TERMINATE.store(true, Ordering::SeqCst);
 }
 

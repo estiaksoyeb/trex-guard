@@ -30,7 +30,7 @@ use nix::poll::{poll, PollFd, PollFlags, PollTimeout};
 use nix::pty::{forkpty, ForkptyResult, Winsize};
 use nix::sys::signal::{kill, Signal};
 use nix::sys::termios::{cfmakeraw, tcgetattr, tcsetattr, SetArg};
-use nix::sys::wait::{waitpid, WaitStatus};
+use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd::{read, write, Pid};
 
 use crate::config::Config;
@@ -39,6 +39,11 @@ use crate::rules;
 
 /// The marker exported to the guarded shell.
 pub const ACTIVE_ENV: &str = "TGR_ACTIVE";
+
+/// Events worth waking the relay for. See the comment at the `poll` call.
+const POLLIN: PollFlags = PollFlags::POLLIN;
+const POLLHUP: PollFlags = PollFlags::POLLHUP;
+const POLLERR: PollFlags = PollFlags::POLLERR;
 
 const BP_ON: &[u8] = b"\x1b[?2004h";
 const BP_OFF: &[u8] = b"\x1b[?2004l";
@@ -365,13 +370,51 @@ pub fn run(config: Config, shell_args: Vec<String>) -> i32 {
         // The guard was told to stop: pass it on so the guarded shell shuts
         // down the way it would have without a guard in the way.
         let _ = kill(child, sig);
+        // An interactive bash ignores SIGTERM and SIGHUP by design, so the
+        // forwarded signal often does nothing. Waiting forever for a shell
+        // that will not leave is the bug this guard had: `tgr` hung at 100%
+        // CPU with a zombie child. Give the polite signal a moment, then end
+        // the shell the way closing the terminal would.
+        match wait_with_deadline(child, std::time::Duration::from_millis(500)) {
+            Some(status) => return exit_code(status),
+            None => {
+                let _ = kill(child, Signal::SIGKILL);
+                return match waitpid(child, None) {
+                    Ok(status) => exit_code(status),
+                    Err(_) => 1,
+                };
+            }
+        }
     }
 
     match waitpid(child, None) {
-        Ok(WaitStatus::Exited(_, code)) => code,
-        Ok(WaitStatus::Signaled(_, sig, _)) => 128 + sig as i32,
+        Ok(status) => exit_code(status),
+        Err(_) => 1,
+    }
+}
+
+/// Maps a wait status to the code `tgr` exits with.
+fn exit_code(status: WaitStatus) -> i32 {
+    match status {
+        WaitStatus::Exited(_, code) => code,
+        WaitStatus::Signaled(_, sig, _) => 128 + sig as i32,
         _ => 1,
     }
+}
+
+/// Waits up to `limit` for `child`, returning its status if it finished.
+fn wait_with_deadline(child: Pid, limit: std::time::Duration) -> Option<WaitStatus> {
+    let start = std::time::Instant::now();
+    while start.elapsed() < limit {
+        match waitpid(child, Some(WaitPidFlag::WNOHANG)) {
+            Ok(WaitStatus::StillAlive) => {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            Ok(status) => return Some(status),
+            Err(_) => return None,
+        }
+    }
+    None
 }
 
 /// How the loop ended.
@@ -423,12 +466,16 @@ fn loop_guard(
     // Resizes and signals arrive asynchronously. `poll` is woken by them
     // (EINTR) and the flags are then checked before any further work, so the
     // loop never blocks indefinitely without noticing one.
-    let end = LoopEnd::default();
+    let mut end = LoopEnd::default();
     let mut tap = PasteTap::default();
     let mut buf = [0u8; 8192];
 
     loop {
         if crate::terminated() {
+            // Remember *which* signal so it can be passed to the shell. A
+            // guard that exits without telling the shell leaves an orphan
+            // holding the user's terminal.
+            end.forward_signal = crate::terminate_signal().and_then(|sig| Signal::try_from(sig).ok());
             break;
         }
         if WINDOW_CHANGED.swap(false, Ordering::SeqCst) {
@@ -437,9 +484,15 @@ fn loop_guard(
             }
         }
 
+        // POLLHUP and POLLERR must be requested, not just POLLIN. When the
+        // guarded shell exits, its pty slave closes and `poll` reports the
+        // master as *always ready* with POLLHUP. A POLLIN-only mask therefore
+        // spins here at full speed without ever reading, never sees the EOF,
+        // and never returns to `waitpid` -- the guard hangs after `exit` and
+        // the shell is left as a zombie.
         let mut fds = [
-            PollFd::new(stdin, PollFlags::POLLIN),
-            PollFd::new(master_fd, PollFlags::POLLIN),
+            PollFd::new(stdin, POLLIN | POLLHUP | POLLERR),
+            PollFd::new(master_fd, POLLIN | POLLHUP | POLLERR),
         ];
         match poll(&mut fds, PollTimeout::from(250u16)) {
             Ok(_) => {}
@@ -447,7 +500,12 @@ fn loop_guard(
             Err(e) => return Err(io::Error::other(e)),
         }
 
-        if fds[0].revents().unwrap_or(PollFlags::empty()).contains(PollFlags::POLLIN) {
+        // Read whenever the descriptor is readable *or* hung up. On a hang-up
+        // the read returns 0 or EIO, which is the EOF path below.
+        if fds[0]
+            .revents()
+            .is_some_and(|r| r.intersects(POLLIN | POLLHUP | POLLERR))
+        {
             let n = match read(stdin, &mut buf) {
                 Ok(0) => break,
                 Ok(n) => n,
@@ -532,7 +590,10 @@ fn loop_guard(
             }
         }
 
-        if fds[1].revents().unwrap_or(PollFlags::empty()).contains(PollFlags::POLLIN) {
+        if fds[1]
+            .revents()
+            .is_some_and(|r| r.intersects(POLLIN | POLLHUP | POLLERR))
+        {
             let n = match read(master_fd, &mut buf) {
                 Ok(0) => break,
                 Ok(n) => n,

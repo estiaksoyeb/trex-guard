@@ -714,3 +714,58 @@ block it runs.
 - **A clipboard write from `tgw`.** The block writes its own output. A
   watchdog writing to the clipboard would be a second source of truth about
   what the human is about to paste.
+
+### Two ways `tgr` could trap the terminal
+
+Reported from daily use, not from a test: type `tgr`, then `exit`, and the
+prompt comes back but never returns. `tg` escapes; `tgr` does not. Killing
+`tgr` did not work either.
+
+**The exit hang.** A probe (`ps`, `/proc/<pid>/status`, `wchan`) showed the
+guarded bash as a *zombie* and `tgr` in state `R` — running, not waiting. So
+the child was already dead and `tgr` was spinning, which ruled out `waitpid`
+being the blocker. The relay polled with `POLLIN` and only checked `POLLIN`.
+A minimal reproduction with no guard at all — open a pty master, close the
+slave, poll it — hit 187,061 iterations in half a second: `poll` (and
+`select`) report a hung-up descriptor as ready *immediately and forever*, so
+the 250 ms timeout never applies, the loop never reads, never sees EOF, and
+never returns to `waitpid`.
+
+This was a **port regression**, not an inherited flaw. The C++ loop uses
+`select` and acts on `FD_ISSET`, so a hang-up is read like any other
+readiness, returns `0` or `EIO`, and ends the loop. The port narrowed that to
+`POLLIN` in both the wait mask and the check. Fixing it restored the original
+semantics rather than adding a new mechanism.
+
+**The SIGTERM hang.** With the loop fixed, `kill tgr` still did nothing. The
+handler set a flag that stopped the loop, but nothing told the shell, so
+`waitpid(child, None)` blocked forever — `/proc/<pid>/wchan` said `do_wait`.
+`LoopEnd::forward_signal` existed to carry the signal and **was never
+assigned**; the `if let Some(sig)` that would have forwarded it could not run.
+The signal number is now recorded in an atomic from the handler and forwarded
+after the loop leaves.
+
+That still was not enough. **Interactive bash ignores `SIGTERM` and
+`SIGHUP` by design**, so forwarding a polite signal to a shell that is built
+to ignore it left `tgr` waiting again. `tgr` now waits 500 ms, then `SIGKILL`s
+the shell — what closing the terminal window does. `SIGINT` and `SIGHUP` were
+checked and both end cleanly with no orphaned shell.
+
+**Why the tests did not catch either.** The pty driver always `SIGKILL`ed its
+child, so "the guard exited" and "the guard hung until we killed it" were
+indistinguishable. A test that kills its subject cannot observe a hang. The
+new driver waits for the guard process itself to exit against a deadline, and
+a further probe checked that no child bash survives.
+
+Three tests now cover this: `the_guard_exits_when_the_shell_does`,
+`ctrl_d_exits_the_guard_too` and `sigterm_ends_the_guard_and_the_shell`. Each
+was run against the reverted code and failed there; the SIGTERM test was
+checked against *both* halves removed individually, since either alone
+reproduces the hang.
+
+One bug was in the tests themselves while writing them: `py_repr` uses Rust's
+`{:?}`, which renders Ctrl-D as `"\u{4}"` — a Python syntax error. The script
+died, stdout was empty, and the test reported a hang that was not there. Keys
+are now passed as a list of byte values. And the first version stopped
+pumping output at pty EOF, which happens when the *shell* leaves while the
+*guard* is still reaping it; the driver keeps waiting for the guard past EOF.

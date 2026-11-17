@@ -168,13 +168,48 @@ and continues. The size is a convenience; refusing to guard because a terminal
 cannot report its dimensions is the wrong trade. The size is refreshed on
 `SIGWINCH` in both.
 
-### 5. Terminating signals unwind instead of re-raising
+### 5. Terminating signals unwind, and escalate if the shell will not go
 
 The C++ handler restores the terminal, forwards the signal to the child and
-re-raises it from inside the handler. `tgr` sets a flag; the main loop leaves
-its poll, restores the terminal, forwards the signal to the child, and reaps it.
-The observable result (terminal restored, child terminated) is the same, but no
-cleanup work happens in a signal handler.
+re-raises it from inside the handler. `tgr` records the signal number in an
+atomic from its handler; the main loop leaves its poll, restores the terminal,
+forwards the signal to the child, and reaps it. No cleanup work happens in a
+signal handler.
+
+The difference that matters is what happens next. **An interactive bash ignores
+`SIGTERM` and `SIGHUP` by design** — it is the shell's terminal session, so the
+kernel's default action must not apply. Forwarding alone therefore leaves a
+live shell behind. `tgr` waits 500 ms after forwarding, then sends `SIGKILL`,
+which is the same thing closing the terminal window does. `SIGINT` reaches the
+shell unchanged and ends `tgr` the same way.
+
+| Signal sent to `tgr` | Shell sees | `tgr` exits |
+| --- | --- | --- |
+| `SIGTERM` | `SIGTERM`, then `SIGKILL` after 500 ms | `137` |
+| `SIGHUP` | `SIGHUP` (bash exits on it) | `129` |
+| `SIGINT` | `SIGINT`, then `SIGKILL` after 500 ms | `137` |
+
+### 6. The relay reads on hang-up, not only on data
+
+The C++ loop uses `select` and acts on `FD_ISSET`, so a hung-up descriptor is
+read like any other ready one, returns `0` or `EIO`, and the loop ends.
+`tgr`'s port narrowed this to `poll` for `POLLIN` only and checked only
+`POLLIN`. That is a port bug with a bad failure mode, not a design change:
+
+- When the guarded shell exits, its pty slave closes. `poll` then reports the
+  master **permanently ready** with `POLLHUP` — it does not wait for the
+  timeout. A `POLLIN`-only mask never matches, so the loop spins at full CPU,
+  never reads the EOF, never reaches `waitpid`, and leaves the shell as a
+  zombie. Typing `exit` printed `exit` and then hung the terminal.
+- `tgr` now requests and checks `POLLIN | POLLHUP | POLLERR` on both
+  descriptors and reads on any of them, restoring the C++ semantics.
+
+`tests/pty_e2e.rs` covers both bugs by driving the real binary:
+`the_guard_exits_when_the_shell_does`, `ctrl_d_exits_the_guard_too` and
+`sigterm_ends_the_guard_and_the_shell`. The driver waits for the guard process
+itself to exit instead of always killing it, because a test that kills its
+subject cannot tell "exited" from "hung". Each test was confirmed to fail with
+its fix reverted.
 
 ## What is *not* different
 

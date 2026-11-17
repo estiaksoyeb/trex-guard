@@ -40,9 +40,23 @@ pub mod pty;
 /// must see the same flag, and a handler may do nothing else.
 pub static TERMINATE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// Which terminating signal arrived, so it can be forwarded to the guarded
+/// shell. 0 means none. A handler may only store to an atomic, so the number
+/// is recorded and turned into a `Signal` by the main loop.
+pub static TERMINATE_SIGNAL: std::sync::atomic::AtomicI32 =
+    std::sync::atomic::AtomicI32::new(0);
+
 /// Whether a terminating signal has been received.
 pub fn terminated() -> bool {
     TERMINATE.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// The terminating signal that arrived, if any.
+pub fn terminate_signal() -> Option<i32> {
+    match TERMINATE_SIGNAL.load(std::sync::atomic::Ordering::SeqCst) {
+        0 => None,
+        sig => Some(sig),
+    }
 }
 pub mod risk;
 pub mod rules;
